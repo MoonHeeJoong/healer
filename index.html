@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mini Healer Online</title>
+    <title>Mini Healer Online - Survival Edition</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & Babel CDNs -->
@@ -11,58 +11,62 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        @keyframes float-up {
-            0% { transform: translate(-50%, 0); opacity: 1; }
-            100% { transform: translate(-50%, -40px); opacity: 0; }
+        @keyframes float-up-random {
+            0% { transform: translate(-50%, 0) scale(0.5); opacity: 1; }
+            100% { transform: translate(var(--tw-translate-x), -60px) scale(1.2); opacity: 0; }
         }
         .animate-float-up {
-            animation: float-up 1s ease-out forwards;
+            animation: float-up-random 0.8s ease-out forwards;
         }
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
+        @keyframes particle-fade {
+            0% { transform: translate(0, 0) scale(1); opacity: 1; }
+            100% { transform: translate(var(--move-x), var(--move-y)) scale(0); opacity: 0; }
         }
-        /* 쿨타임 오버레이 애니메이션 보정 */
-        .cooldown-overlay {
-            transition: height 0.1s linear;
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            animation: particle-fade 0.6s ease-out forwards;
+        }
+        @keyframes screen-shake {
+            0%, 100% { transform: translate(0, 0); }
+            10%, 30%, 50%, 70%, 90% { transform: translate(-4px, -4px); }
+            20%, 40%, 60%, 80% { transform: translate(4px, 4px); }
+        }
+        .shake { animation: screen-shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        
+        @keyframes flash-red {
+            0% { background-color: rgba(220, 38, 38, 0); }
+            20% { background-color: rgba(220, 38, 38, 0.4); }
+            100% { background-color: rgba(220, 38, 38, 0); }
+        }
+        .flash-hit { animation: flash-red 0.3s ease-out; }
+
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .attack-gauge { transition: width 0.1s linear; }
+        .boss-breathing { animation: pulse 2s infinite ease-in-out; }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
         }
     </style>
 </head>
-<body>
+<body class="bg-black">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useCallback, useRef } = React;
 
-        // --- 아이콘 컴포넌트 (SVG) ---
+        // --- 아이콘 컴포넌트 ---
         const Icon = ({ name, size = 20, className = "" }) => {
             const icons = {
                 Heart: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />,
                 Shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
                 Zap: <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
                 Flame: <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />,
-                User: (
-                    <>
-                        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                        <circle cx="12" cy="7" r="4" />
-                    </>
-                ),
+                User: (<><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>),
                 Activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
-                AlertCircle: (
-                    <>
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="8" x2="12" y2="12" />
-                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                    </>
-                ),
-                Sword: (
-                    <>
-                        <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" />
-                        <line x1="13" y1="19" x2="19" y2="13" />
-                        <line x1="16" y1="16" x2="20" y2="20" />
-                        <line x1="19" y1="21" x2="20" y2="20" />
-                        <line x1="20" y1="20" x2="21" y2="19" />
-                    </>
-                )
+                AlertCircle: (<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>),
+                Sword: (<><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="20" y2="20" /><line x1="20" y1="20" x2="21" y2="19" /></>)
             };
             return (
                 <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -72,145 +76,213 @@
         };
 
         const App = () => {
-            // --- 게임 상수 ---
             const MAX_MANA = 200;
-            const BOSS_MAX_HP = 50000;
+            const BOSS_MAX_HP = 80000;
             const TICK_RATE = 100;
 
-            // 스킬 정보 (최대 쿨타임 포함)
             const SKILL_DATA = {
-                1: { name: '빠른 치유', mana: 15, cd: 1.5, icon: 'Heart', key: '1' },
-                2: { name: '회복(HoT)', mana: 20, cd: 5, icon: 'Activity', key: '2' },
-                3: { name: '신의 보호막', mana: 25, cd: 8, icon: 'Shield', key: '3' },
-                4: { name: '성스러운 폭발', mana: 45, cd: 12, icon: 'AlertCircle', key: '4' }
+                1: { name: '순간 치유', mana: 15, cd: 1.2, icon: 'Heart', key: '1', color: 'text-green-400' },
+                2: { name: '재생(HoT)', mana: 20, cd: 4, icon: 'Activity', key: '2', color: 'text-emerald-300' },
+                3: { name: '신의 보호막', mana: 25, cd: 7, icon: 'Shield', key: '3', color: 'text-blue-300' },
+                4: { name: '성스러운 폭발', mana: 50, cd: 12, icon: 'AlertCircle', key: '4', color: 'text-yellow-200' }
             };
 
-            // --- 상태 관리 ---
             const [gameState, setGameState] = useState('START');
             const [bossHp, setBossHp] = useState(BOSS_MAX_HP);
             const [mana, setMana] = useState(MAX_MANA);
-            const [selectedTarget, setSelectedTarget] = useState(0);
+            const [selectedTarget, setSelectedTarget] = useState(0); // 0,1,2: Party, 3: Self
+            
+            // 플레이어 전용 상태
+            const [player, setPlayer] = useState({
+                hp: 500, maxHp: 500, shield: 0, hot: 0, emoji: '🧙'
+            });
+
             const [party, setParty] = useState([
-                { id: 0, name: '전사', role: 'Tank', hp: 1000, maxHp: 1000, hot: 0, shield: 0, dead: false, emoji: '🛡️', key: 'Q' },
-                { id: 1, name: '도적', role: 'DPS', hp: 500, maxHp: 500, hot: 0, shield: 0, dead: false, emoji: '🗡️', key: 'W' },
-                { id: 2, name: '법사', role: 'DPS', hp: 350, maxHp: 350, hot: 0, shield: 0, dead: false, emoji: '🪄', key: 'E' },
+                { id: 0, name: '전사', role: 'Tank', hp: 1200, maxHp: 1200, hot: 0, shield: 0, dead: false, emoji: '🛡️', key: 'Q', attackProgress: 0 },
+                { id: 1, name: '도적', role: 'DPS', hp: 600, maxHp: 600, hot: 0, shield: 0, dead: false, emoji: '🗡️', key: 'W', attackProgress: 0 },
+                { id: 2, name: '법사', role: 'DPS', hp: 450, maxHp: 450, hot: 0, shield: 0, dead: false, emoji: '🪄', key: 'E', attackProgress: 0 },
             ]);
+
             const [cooldowns, setCooldowns] = useState({ 1: 0, 2: 0, 3: 0, 4: 0 });
-            const [logs, setLogs] = useState([{ msg: "전투를 시작할 준비를 하세요.", type: "system", id: 'init-log' }]);
+            const [logs, setLogs] = useState([{ msg: "치유의 힘을 집중하세요!", type: "system", id: 'init-log' }]);
             
             const [combatEffects, setCombatEffects] = useState([]);
+            const [particles, setParticles] = useState([]);
             const [bossAction, setBossAction] = useState('');
-            const [hitTargets, setHitTargets] = useState([]);
+            const [hitTargets, setHitTargets] = useState([]); // indices of party or 'player'
+            const [screenFlash, setScreenFlash] = useState(false);
+            const [isShaking, setIsShaking] = useState(false);
 
             const gameLoopRef = useRef(null);
             const lastBossAttackRef = useRef(Date.now());
 
-            const addLog = (msg, type = "normal") => {
-                const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-                setLogs(prev => [{ msg, type, id: newId }, ...prev].slice(0, 10));
+            const triggerScreenEffect = (type) => {
+                if (type === 'damage') {
+                    setScreenFlash(true);
+                    setIsShaking(true);
+                    setTimeout(() => { setScreenFlash(false); setIsShaking(false); }, 300);
+                }
             };
 
-            const triggerCombatText = (targetId, value, type) => {
+            const spawnParticles = (targetId, type) => {
+                const colors = { damage: '#ef4444', heal: '#4ade80', shield: '#60a5fa' };
+                const newParticles = Array.from({ length: 8 }).map(() => ({
+                    id: Math.random(),
+                    targetId,
+                    color: colors[type],
+                    moveX: (Math.random() - 0.5) * 100 + 'px',
+                    moveY: (Math.random() - 0.5) * 100 + 'px',
+                }));
+                setParticles(prev => [...prev, ...newParticles]);
+                setTimeout(() => {
+                    setParticles(prev => prev.filter(p => !newParticles.find(np => np.id === p.id)));
+                }, 600);
+            };
+
+            const triggerCombatText = (targetId, value, type, isCrit = false) => {
                 const id = Math.random();
-                setCombatEffects(prev => [...prev, { id, targetId, value, type }]);
+                const randomX = (Math.random() - 0.5) * 40;
+                setCombatEffects(prev => [...prev, { id, targetId, value, type, isCrit, x: randomX }]);
+                spawnParticles(targetId, type);
                 setTimeout(() => {
                     setCombatEffects(prev => prev.filter(e => e.id !== id));
-                }, 1000);
+                }, 800);
             };
 
-            const damageMember = (index, amount) => {
-                setParty(prev => {
-                    const newParty = [...prev];
-                    if (newParty[index].dead) return prev;
+            const damageTarget = (type, index, amount, isMajor = false) => {
+                if (isMajor) triggerScreenEffect('damage');
 
-                    let remainingDamage = amount;
-                    if (newParty[index].shield > 0) {
-                        const absorbed = Math.min(newParty[index].shield, remainingDamage);
-                        newParty[index].shield -= absorbed;
-                        remainingDamage -= absorbed;
-                        triggerCombatText(`p-${index}`, `Absorb`, "shield");
-                    }
-
-                    if (remainingDamage > 0) {
-                        newParty[index].hp = Math.max(0, newParty[index].hp - remainingDamage);
-                        triggerCombatText(`p-${index}`, `-${Math.ceil(remainingDamage)}`, "damage");
-                        setHitTargets(prev => [...prev, index]);
-                        setTimeout(() => setHitTargets(prev => prev.filter(i => i !== index)), 300);
-                    }
-
-                    if (newParty[index].hp <= 0 && !newParty[index].dead) {
-                        newParty[index].dead = true;
-                        addLog(`${newParty[index].name}이(가) 쓰러졌습니다!`, "error");
-                    }
-                    return newParty;
-                });
+                if (type === 'player') {
+                    setPlayer(prev => {
+                        let remainingDamage = amount;
+                        let newShield = prev.shield;
+                        if (newShield > 0) {
+                            const absorbed = Math.min(newShield, remainingDamage);
+                            newShield -= absorbed;
+                            remainingDamage -= absorbed;
+                            triggerCombatText(`p-player`, `방어됨`, "shield");
+                        }
+                        const newHp = Math.max(0, prev.hp - remainingDamage);
+                        if (remainingDamage > 0) {
+                            triggerCombatText(`p-player`, `-${Math.ceil(remainingDamage)}`, "damage", remainingDamage > 80);
+                            setHitTargets(prevHit => [...prevHit, 'player']);
+                            setTimeout(() => setHitTargets(prevHit => prevHit.filter(i => i !== 'player')), 200);
+                        }
+                        return { ...prev, hp: newHp, shield: newShield };
+                    });
+                } else {
+                    setParty(prev => {
+                        const newParty = [...prev];
+                        if (newParty[index].dead) return prev;
+                        let remainingDamage = amount;
+                        if (newParty[index].shield > 0) {
+                            const absorbed = Math.min(newParty[index].shield, remainingDamage);
+                            newParty[index].shield -= absorbed;
+                            remainingDamage -= absorbed;
+                            triggerCombatText(`p-${index}`, `방어됨`, "shield");
+                        }
+                        if (remainingDamage > 0) {
+                            newParty[index].hp = Math.max(0, newParty[index].hp - remainingDamage);
+                            triggerCombatText(`p-${index}`, `-${Math.ceil(remainingDamage)}`, "damage", remainingDamage > 150);
+                            setHitTargets(prevHit => [...prevHit, index]);
+                            setTimeout(() => setHitTargets(prevHit => prevHit.filter(i => i !== index)), 200);
+                        }
+                        if (newParty[index].hp <= 0 && !newParty[index].dead) {
+                            newParty[index].dead = true;
+                            addLog(`${newParty[index].name} 사망!`, "error");
+                        }
+                        return newParty;
+                    });
+                }
             };
 
-            const healMember = (index, amount) => {
-                setParty(prev => {
-                    const newParty = [...prev];
-                    if (newParty[index].dead) return prev;
-                    const actualHeal = Math.min(newParty[index].maxHp - newParty[index].hp, amount);
-                    if (actualHeal > 0) {
-                        newParty[index].hp += actualHeal;
-                        triggerCombatText(`p-${index}`, `+${Math.ceil(actualHeal)}`, "heal");
-                    }
-                    return newParty;
-                });
+            const healTarget = (type, index, amount) => {
+                const isCrit = Math.random() > 0.85;
+                const finalHeal = isCrit ? amount * 1.8 : amount;
+
+                if (type === 'player') {
+                    setPlayer(prev => {
+                        const actualHeal = Math.min(prev.maxHp - prev.hp, finalHeal);
+                        if (actualHeal > 0 || isCrit) {
+                            triggerCombatText(`p-player`, `${isCrit ? '⭐' : ''}+${Math.ceil(finalHeal)}`, "heal", isCrit);
+                        }
+                        return { ...prev, hp: prev.hp + actualHeal };
+                    });
+                } else {
+                    setParty(prev => {
+                        const newParty = [...prev];
+                        if (newParty[index].dead) return prev;
+                        const actualHeal = Math.min(newParty[index].maxHp - newParty[index].hp, finalHeal);
+                        if (actualHeal > 0 || isCrit) {
+                            newParty[index].hp += actualHeal;
+                            triggerCombatText(`p-${index}`, `${isCrit ? '⭐' : ''}+${Math.ceil(finalHeal)}`, "heal", isCrit);
+                        }
+                        return newParty;
+                    });
+                }
             };
 
             const castSpell = useCallback((spellId) => {
                 if (gameState !== 'PLAYING') return;
-
                 const spell = SKILL_DATA[spellId];
-                if (mana < spell.mana) {
-                    addLog("마나가 부족합니다!", "error");
-                    return;
-                }
+                if (mana < spell.mana) { addLog("마나 부족!", "error"); return; }
                 if (cooldowns[spellId] > 0) return;
 
-                // 스킬 효과 적용
-                if (spellId === 1) healMember(selectedTarget, 150);
+                const targetType = selectedTarget === 3 ? 'player' : 'party';
+                const targetIdx = selectedTarget === 3 ? null : selectedTarget;
+
+                if (spellId === 1) healTarget(targetType, targetIdx, 180);
                 if (spellId === 2) {
-                    setParty(prev => {
-                        const next = [...prev];
-                        next[selectedTarget].hot = 10;
-                        triggerCombatText(`p-${selectedTarget}`, "Renew", "heal");
-                        return next;
-                    });
+                    if (targetType === 'player') {
+                        setPlayer(prev => ({ ...prev, hot: 12 }));
+                        triggerCombatText(`p-player`, "재생", "heal");
+                    } else {
+                        setParty(prev => {
+                            const next = [...prev];
+                            next[targetIdx].hot = 12;
+                            triggerCombatText(`p-${targetIdx}`, "재생", "heal");
+                            return next;
+                        });
+                    }
                 }
                 if (spellId === 3) {
-                    setParty(prev => {
-                        const next = [...prev];
-                        next[selectedTarget].shield = 200;
-                        triggerCombatText(`p-${selectedTarget}`, "+Shield", "shield");
-                        return next;
-                    });
+                    if (targetType === 'player') {
+                        setPlayer(prev => ({ ...prev, shield: 300 }));
+                        triggerCombatText(`p-player`, "보호막", "shield");
+                    } else {
+                        setParty(prev => {
+                            const next = [...prev];
+                            next[targetIdx].shield = 350;
+                            triggerCombatText(`p-${targetIdx}`, "보호막", "shield");
+                            return next;
+                        });
+                    }
                 }
                 if (spellId === 4) {
-                    party.forEach((_, i) => healMember(i, 100));
+                    party.forEach((_, i) => healTarget('party', i, 120));
+                    healTarget('player', null, 100);
+                    addLog("성스러운 폭발!", "success");
                 }
 
                 setMana(m => Math.max(0, m - spell.mana));
                 setCooldowns(prev => ({ ...prev, [spellId]: spell.cd * 10 }));
-                addLog(`${spell.name} 시전!`, "success");
             }, [gameState, mana, cooldowns, selectedTarget, party]);
 
-            // 단축키 시스템 추가
+            const addLog = (msg, type = "normal") => {
+                const newId = `${Date.now()}-${Math.random()}`;
+                setLogs(prev => [{ msg, type, id: newId }, ...prev].slice(0, 8));
+            };
+
+            // 단축키 시스템 업데이트 (S 추가)
             useEffect(() => {
                 const handleKeyDown = (e) => {
                     if (gameState !== 'PLAYING') return;
-                    
-                    // 스킬 단축키 1-4
-                    if (['1', '2', '3', '4'].includes(e.key)) {
-                        castSpell(parseInt(e.key));
-                    }
-                    // 타겟팅 단축키 Q, W, E
+                    if (['1', '2', '3', '4'].includes(e.key)) castSpell(parseInt(e.key));
                     if (e.key.toUpperCase() === 'Q') setSelectedTarget(0);
                     if (e.key.toUpperCase() === 'W') setSelectedTarget(1);
                     if (e.key.toUpperCase() === 'E') setSelectedTarget(2);
+                    if (e.key.toUpperCase() === 'S') setSelectedTarget(3); // Self Target
                 };
-
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
             }, [gameState, castSpell]);
@@ -218,207 +290,245 @@
             useEffect(() => {
                 if (gameState === 'PLAYING') {
                     gameLoopRef.current = setInterval(() => {
-                        setMana(m => Math.min(MAX_MANA, m + 0.6));
+                        setMana(m => Math.min(MAX_MANA, m + 0.8));
                         setCooldowns(prev => {
                             const next = { ...prev };
                             Object.keys(next).forEach(k => { if (next[k] > 0) next[k] -= 1; });
                             return next;
                         });
 
+                        const isBossEnraged = bossHp < BOSS_MAX_HP * 0.3;
+
+                        // 파티 루프
                         setParty(prev => {
-                            let partyDps = 0;
+                            let totalDpsThisTick = 0;
                             const next = prev.map((m, i) => {
                                 if (m.dead) return m;
-                                const dps = m.role === 'Tank' ? 60 : (m.name === '법사' ? 280 : 180);
-                                partyDps += dps;
-                                if (m.hot > 0 && Math.random() > 0.7) triggerCombatText(`p-${i}`, `+20`, "heal");
-                                if (m.hot > 0) return { ...m, hp: Math.min(m.maxHp, m.hp + 20), hot: m.hot - 1 };
-                                return m;
+                                const speed = m.role === 'Tank' ? 10 : (m.name === '도적' ? 18 : 8);
+                                let newProgress = m.attackProgress + speed;
+                                if (newProgress >= 100) {
+                                    const damage = (m.role === 'Tank' ? 600 : (m.name === '법사' ? 3500 : 2000));
+                                    totalDpsThisTick += damage;
+                                    newProgress = 0;
+                                    triggerCombatText('boss', `-${damage}`, 'damage');
+                                }
+                                let nextHp = m.hp;
+                                let nextHot = m.hot;
+                                if (m.hot > 0) {
+                                    nextHp = Math.min(m.maxHp, m.hp + 20);
+                                    nextHot = m.hot - 1;
+                                    if (m.hot % 4 === 0) triggerCombatText(`p-${i}`, `+20`, "heal");
+                                }
+                                return { ...m, hp: nextHp, hot: nextHot, attackProgress: newProgress };
                             });
-                            const dpsThisTick = partyDps / 10;
-                            setBossHp(h => Math.max(0, h - dpsThisTick));
-                            if (Math.random() > 0.9) triggerCombatText('boss', `-${Math.ceil(dpsThisTick * 5)}`, 'damage');
+                            if (totalDpsThisTick > 0) setBossHp(h => Math.max(0, h - totalDpsThisTick / 10));
                             return next;
                         });
 
+                        // 플레이어 루프 (HoT 등)
+                        setPlayer(prev => {
+                            let nextHp = prev.hp;
+                            let nextHot = prev.hot;
+                            if (prev.hot > 0) {
+                                nextHp = Math.min(prev.maxHp, prev.hp + 15);
+                                nextHot = prev.hot - 1;
+                                if (prev.hot % 4 === 0) triggerCombatText(`p-player`, `+15`, "heal");
+                            }
+                            return { ...prev, hp: nextHp, hot: nextHot };
+                        });
+
+                        // 보스 공격 로직
                         const now = Date.now();
-                        if (now - lastBossAttackRef.current > 2500) {
+                        const attackInterval = isBossEnraged ? 1500 : 2500;
+                        if (now - lastBossAttackRef.current > attackInterval) {
                             lastBossAttackRef.current = now;
                             const rand = Math.random();
-                            if (rand < 0.6) {
+                            if (rand < 0.5) {
                                 setBossAction('attacking');
-                                setTimeout(() => { damageMember(0, 180); setBossAction(''); }, 500);
-                                addLog("보스가 전사를 강타합니다!", "warning");
-                            } else if (rand < 0.85) {
+                                setTimeout(() => { damageTarget('party', 0, 280, true); setBossAction(''); }, 400);
+                            } else if (rand < 0.75) {
                                 setBossAction('aoe');
-                                setTimeout(() => { [0, 1, 2].forEach(i => damageMember(i, 90)); setBossAction(''); }, 800);
-                                addLog("보스가 광역 화염을 방사합니다!", "warning");
+                                setTimeout(() => { 
+                                    [0, 1, 2].forEach(i => damageTarget('party', i, 120, true));
+                                    damageTarget('player', null, 80); // 플레이어도 광역 데미지
+                                    setBossAction(''); 
+                                }, 600);
+                                addLog("광폭한 화염 숨결!", "warning");
                             } else {
-                                const target = Math.floor(Math.random() * 3);
+                                // 무작위 타겟 (플레이어 포함)
+                                const t = Math.floor(Math.random() * 4);
                                 setBossAction('attacking');
-                                setTimeout(() => { damageMember(target, 140); setBossAction(''); }, 500);
-                                addLog(`보스가 ${party[target].name}를 급습합니다!`, "warning");
+                                setTimeout(() => { 
+                                    if (t === 3) damageTarget('player', null, 150, true);
+                                    else damageTarget('party', t, 200, true);
+                                    setBossAction(''); 
+                                }, 400);
                             }
                         }
                     }, TICK_RATE);
-                } else {
-                    clearInterval(gameLoopRef.current);
-                }
+                } else { clearInterval(gameLoopRef.current); }
                 return () => clearInterval(gameLoopRef.current);
-            }, [gameState, party]);
+            }, [gameState, party, bossHp]);
 
             useEffect(() => {
                 if (bossHp <= 0 && gameState === 'PLAYING') setGameState('WON');
-                if (party.every(m => m.dead) && gameState === 'PLAYING') setGameState('LOST');
-            }, [bossHp, party, gameState]);
+                if ((party.every(m => m.dead) || player.hp <= 0) && gameState === 'PLAYING') setGameState('LOST');
+            }, [bossHp, party, player.hp, gameState]);
 
             const startGame = () => {
                 setBossHp(BOSS_MAX_HP);
                 setMana(MAX_MANA);
+                setPlayer({ hp: 500, maxHp: 500, shield: 0, hot: 0, emoji: '🧙' });
                 setParty([
-                    { id: 0, name: '전사', role: 'Tank', hp: 1000, maxHp: 1000, hot: 0, shield: 0, dead: false, emoji: '🛡️', key: 'Q' },
-                    { id: 1, name: '도적', role: 'DPS', hp: 500, maxHp: 500, hot: 0, shield: 0, dead: false, emoji: '🗡️', key: 'W' },
-                    { id: 2, name: '법사', role: 'DPS', hp: 350, maxHp: 350, hot: 0, shield: 0, dead: false, emoji: '🪄', key: 'E' },
+                    { id: 0, name: '전사', role: 'Tank', hp: 1200, maxHp: 1200, hot: 0, shield: 0, dead: false, emoji: '🛡️', key: 'Q', attackProgress: 0 },
+                    { id: 1, name: '도적', role: 'DPS', hp: 600, maxHp: 600, hot: 0, shield: 0, dead: false, emoji: '🗡️', key: 'W', attackProgress: 0 },
+                    { id: 2, name: '법사', role: 'DPS', hp: 450, maxHp: 450, hot: 0, shield: 0, dead: false, emoji: '🪄', key: 'E', attackProgress: 0 },
                 ]);
                 setGameState('PLAYING');
-                setLogs([{ msg: "전투가 시작되었습니다!", type: "system", id: 'start-log' }]);
             };
 
             return (
-                <div className="min-h-screen bg-slate-950 text-slate-100 p-4 font-sans flex flex-col items-center justify-center select-none overflow-hidden">
-                    <div className="max-w-4xl w-full flex flex-col gap-4">
+                <div className={`min-h-screen bg-slate-950 text-slate-100 p-4 font-sans flex flex-col items-center justify-center select-none overflow-hidden ${isShaking ? 'shake' : ''}`}>
+                    {screenFlash && <div className="fixed inset-0 flash-hit z-[100] pointer-events-none" />}
+                    
+                    <div className="max-w-4xl w-full flex flex-col gap-4 relative">
                         
                         {/* Battle Arena */}
-                        <div className="relative h-64 bg-slate-900 rounded-2xl border-2 border-slate-800 shadow-inner overflow-hidden flex flex-col items-center justify-center p-4">
-                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-red-900/10 via-transparent to-transparent opacity-50"></div>
-                            <div className={`relative transition-all duration-500 mb-8 ${bossAction === 'attacking' ? 'translate-y-4 scale-110' : bossAction === 'aoe' ? 'scale-125' : ''}`}>
-                                <div className="text-8xl filter drop-shadow-[0_0_15px_rgba(239,68,68,0.5)]">🐲</div>
+                        <div className="relative h-72 bg-slate-900 rounded-3xl border-4 border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col items-center justify-center p-4">
+                            <div className={`absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] ${bossHp < BOSS_MAX_HP * 0.3 ? 'from-red-900/40' : 'from-blue-900/20'} via-transparent to-transparent opacity-50`}></div>
+                            
+                            {/* Boss */}
+                            <div className={`relative transition-all duration-300 mb-8 boss-breathing ${bossAction === 'attacking' ? 'translate-y-6 scale-125' : bossAction === 'aoe' ? 'scale-150' : ''}`}>
+                                <div className={`text-9xl filter drop-shadow-[0_0_20px_rgba(239,68,68,0.6)] ${bossHp < BOSS_MAX_HP * 0.3 ? 'hue-rotate-[320deg]' : ''}`}>🐲</div>
                                 {combatEffects.filter(e => e.targetId === 'boss').map(effect => (
-                                    <div key={effect.id} className="absolute top-0 left-1/2 -translate-x-1/2 font-black text-2xl text-red-400 animate-bounce">
-                                        {effect.value}
-                                    </div>
+                                    <div key={effect.id} style={{'--tw-translate-x': effect.x + 'px'}} className={`absolute top-0 left-1/2 -translate-x-1/2 font-black italic animate-float-up z-20 text-red-500 ${effect.isCrit ? 'text-4xl' : 'text-2xl'}`}>{effect.value}</div>
                                 ))}
-                                {bossAction === 'aoe' && <div className="absolute top-full left-1/2 -translate-x-1/2 w-64 h-32 bg-orange-500/20 blur-2xl rounded-full animate-pulse"></div>}
                             </div>
-                            <div className="flex gap-12 items-end">
+
+                            {/* Combat Units (Party + Player Visualized) */}
+                            <div className="flex gap-12 items-end relative z-20">
                                 {party.map((member, i) => (
-                                    <div key={member.id} className={`relative flex flex-col items-center transition-all duration-300 ${hitTargets.includes(i) ? 'animate-bounce' : ''}`}>
-                                        <div className={`text-4xl mb-2 ${member.dead ? 'grayscale opacity-30 rotate-90' : ''} ${selectedTarget === i ? 'drop-shadow-[0_0_8px_rgba(59,130,246,0.8)] scale-110' : ''}`}>
+                                    <div key={member.id} className={`relative flex flex-col items-center transition-all duration-300 ${hitTargets.includes(i) ? 'scale-90 opacity-80' : ''}`}>
+                                        <div className={`text-5xl mb-2 transition-transform ${member.dead ? 'grayscale opacity-20 rotate-90 scale-75' : ''} ${selectedTarget === i ? 'drop-shadow-[0_0_12px_rgba(59,130,246,1)] scale-110' : ''}`}>
                                             {member.emoji}
                                         </div>
                                         {combatEffects.filter(e => e.targetId === `p-${i}`).map(effect => (
-                                            <div key={effect.id} className={`absolute -top-10 left-1/2 -translate-x-1/2 font-bold text-lg whitespace-nowrap animate-float-up ${
-                                                effect.type === 'damage' ? 'text-red-500' : effect.type === 'heal' ? 'text-green-400' : 'text-blue-400'
-                                            }`}>
-                                                {effect.value}
-                                            </div>
+                                            <div key={effect.id} style={{'--tw-translate-x': effect.x + 'px'}} className={`absolute -top-12 left-1/2 font-bold whitespace-nowrap animate-float-up z-30 ${effect.type === 'damage' ? 'text-red-500' : effect.type === 'heal' ? 'text-green-400' : 'text-blue-400'}`}>{effect.value}</div>
                                         ))}
-                                        {selectedTarget === i && !member.dead && (
-                                            <div className="absolute -bottom-2 w-8 h-1 bg-blue-500 rounded-full animate-pulse"></div>
-                                        )}
-                                        <span className="absolute -top-6 text-[10px] text-slate-500 font-bold">{member.key}</span>
+                                        {particles.filter(p => p.targetId === `p-${i}`).map(p => (
+                                            <div key={p.id} className="particle w-2 h-2 rounded-full" style={{backgroundColor: p.color, '--move-x': p.moveX, '--move-y': p.moveY}} />
+                                        ))}
+                                        {selectedTarget === i && !member.dead && <div className="absolute -bottom-3 w-10 h-1.5 bg-blue-500 rounded-full animate-ping"></div>}
                                     </div>
                                 ))}
+                                {/* Player in Arena */}
+                                <div className={`relative flex flex-col items-center transition-all duration-300 ${hitTargets.includes('player') ? 'scale-90 opacity-80' : ''}`}>
+                                    <div className={`text-5xl mb-2 transition-transform ${selectedTarget === 3 ? 'drop-shadow-[0_0_12px_rgba(59,130,246,1)] scale-110' : 'opacity-70'}`}>
+                                        {player.emoji}
+                                    </div>
+                                    {combatEffects.filter(e => e.targetId === `p-player`).map(effect => (
+                                        <div key={effect.id} style={{'--tw-translate-x': effect.x + 'px'}} className={`absolute -top-12 left-1/2 font-bold whitespace-nowrap animate-float-up z-30 ${effect.type === 'damage' ? 'text-red-500' : effect.type === 'heal' ? 'text-green-400' : 'text-blue-400'}`}>{effect.value}</div>
+                                    ))}
+                                    {selectedTarget === 3 && <div className="absolute -bottom-3 w-10 h-1.5 bg-blue-500 rounded-full animate-ping"></div>}
+                                </div>
                             </div>
                         </div>
 
                         {/* Boss HP */}
-                        <div className="bg-slate-800 rounded-xl p-4 border-2 border-red-900 shadow-xl relative overflow-hidden">
+                        <div className="bg-slate-900/80 rounded-2xl p-4 border-2 border-red-900 shadow-xl overflow-hidden backdrop-blur-md">
                             <div className="flex justify-between items-end mb-2">
-                                <h2 className="text-xl font-black text-red-500 flex items-center gap-2"><Icon name="Flame" className="animate-pulse" /> 에인션트 드래곤</h2>
-                                <div className="text-right"><span className="text-lg font-mono">{Math.ceil(bossHp).toLocaleString()}</span><span className="text-slate-500 text-sm ml-1">HP</span></div>
+                                <h2 className="text-xl font-black text-red-500 flex items-center gap-2"><Icon name="Flame" /> 드래곤 {bossHp < BOSS_MAX_HP * 0.3 && '광폭화!'}</h2>
+                                <div className="text-right font-mono text-lg">{Math.ceil(bossHp).toLocaleString()} HP</div>
                             </div>
-                            <div className="w-full bg-slate-700 h-3 rounded-full overflow-hidden border border-slate-600">
-                                <div className="h-full bg-gradient-to-r from-red-800 to-red-500 transition-all duration-300" style={{ width: `${(bossHp/BOSS_MAX_HP)*100}%` }}></div>
+                            <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                                <div className="h-full bg-red-600 transition-all duration-500" style={{ width: `${(bossHp/BOSS_MAX_HP)*100}%` }}></div>
                             </div>
                         </div>
 
-                        {/* Party Grid */}
-                        <div className="grid grid-cols-3 gap-3">
+                        {/* Party & Player HP List */}
+                        <div className="grid grid-cols-4 gap-3">
                             {party.map((member, idx) => (
-                                <div key={member.id} onClick={() => !member.dead && setSelectedTarget(idx)} className={`relative cursor-pointer transition-all duration-200 p-3 rounded-xl border-2 ${member.dead ? 'bg-slate-900 border-slate-800 opacity-40' : selectedTarget === idx ? 'bg-slate-800 border-blue-500 ring-2 ring-blue-500/20 shadow-[0_0_15px_rgba(59,130,246,0.2)]' : 'bg-slate-800 border-slate-700'}`}>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <span className="text-xs font-bold truncate">{member.name} <span className="text-slate-500 text-[10px] ml-1">({member.key})</span></span>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${member.role === 'Tank' ? 'bg-orange-900/50 text-orange-300' : 'bg-blue-900/50 text-blue-300'}`}>{member.role}</span>
+                                <div key={member.id} onClick={() => !member.dead && setSelectedTarget(idx)} className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${member.dead ? 'bg-slate-900/30 border-slate-800' : selectedTarget === idx ? 'bg-slate-800 border-blue-500 ring-2 ring-blue-500/20' : 'bg-slate-800/80 border-slate-700'}`}>
+                                    <div className="flex justify-between text-[10px] font-bold mb-1"><span>{member.name}</span><span>{member.key}</span></div>
+                                    <div className="w-full bg-slate-950 h-4 rounded border border-slate-700 relative overflow-hidden mb-1">
+                                        <div className="absolute h-full bg-blue-400/40" style={{ width: `${(member.shield / member.maxHp) * 100}%`, left: `${(member.hp / member.maxHp) * 100}%` }}></div>
+                                        <div className={`h-full ${member.hp < member.maxHp * 0.3 ? 'bg-red-600' : 'bg-green-600'}`} style={{ width: `${(member.hp / member.maxHp) * 100}%` }}></div>
+                                        <div className="absolute inset-0 flex justify-center items-center text-[9px] font-black">{Math.ceil(member.hp)}</div>
                                     </div>
-                                    <div className="w-full bg-slate-900 h-5 rounded border border-slate-700 relative overflow-hidden">
-                                        <div className="absolute h-full bg-blue-400/30 transition-all z-10" style={{ width: `${(member.shield / member.maxHp) * 100}%`, left: `${(member.hp / member.maxHp) * 100}%` }}></div>
-                                        <div className={`h-full transition-all duration-300 ${member.hp < member.maxHp * 0.3 ? 'bg-red-600' : 'bg-green-600'}`} style={{ width: `${(member.hp / member.maxHp) * 100}%` }}></div>
-                                        <div className="absolute inset-0 flex justify-center items-center text-[9px] font-bold">{Math.ceil(member.hp)}</div>
-                                    </div>
-                                    <div className="flex gap-1 mt-1.5 h-4">
-                                        {member.hot > 0 && <Icon name="Activity" size={12} className="text-green-400 animate-pulse" />}
-                                        {member.shield > 0 && <Icon name="Shield" size={12} className="text-blue-300" />}
+                                    <div className="w-full bg-slate-950 h-1 rounded-full overflow-hidden">
+                                        <div className="h-full bg-yellow-500 attack-gauge" style={{ width: `${member.attackProgress}%` }}></div>
                                     </div>
                                 </div>
                             ))}
+                            {/* Player Frame */}
+                            <div onClick={() => setSelectedTarget(3)} className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${selectedTarget === 3 ? 'bg-slate-800 border-blue-500 ring-2 ring-blue-500/20' : 'bg-blue-900/20 border-blue-900/40'}`}>
+                                <div className="flex justify-between text-[10px] font-bold mb-1 text-blue-300"><span>플레이어</span><span>S</span></div>
+                                <div className="w-full bg-slate-950 h-4 rounded border border-slate-700 relative overflow-hidden">
+                                    <div className="absolute h-full bg-blue-400/40" style={{ width: `${(player.shield / player.maxHp) * 100}%`, left: `${(player.hp / player.maxHp) * 100}%` }}></div>
+                                    <div className={`h-full ${player.hp < player.maxHp * 0.3 ? 'bg-red-500' : 'bg-blue-600'}`} style={{ width: `${(player.hp / player.maxHp) * 100}%` }}></div>
+                                    <div className="absolute inset-0 flex justify-center items-center text-[9px] font-black">{Math.ceil(player.hp)}</div>
+                                </div>
+                                <div className="flex gap-1 mt-1.5 h-3">
+                                    {player.hot > 0 && <Icon name="Activity" size={10} className="text-green-400" />}
+                                    {player.shield > 0 && <Icon name="Shield" size={10} className="text-blue-300" />}
+                                </div>
+                            </div>
                         </div>
 
                         {/* Controls */}
-                        <div className="bg-slate-800 rounded-xl p-4 border-2 border-slate-700 shadow-xl flex flex-col md:flex-row gap-4">
-                            <div className="flex-1">
-                                <div className="flex justify-between items-center mb-2 text-xs font-bold"><span className="flex items-center gap-1 text-blue-400"><Icon name="Zap" size={14} /> MANA</span><span>{Math.floor(mana)} / {MAX_MANA}</span></div>
-                                <div className="w-full bg-slate-900 h-2 rounded-full border border-slate-700 overflow-hidden mb-4">
-                                    <div className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${(mana/MAX_MANA)*100}%` }}></div>
+                        <div className="bg-slate-900/90 rounded-3xl p-6 border-2 border-slate-700 shadow-2xl flex flex-col md:flex-row gap-6">
+                            <div className="flex-1 space-y-4">
+                                <div className="flex justify-between items-center text-xs font-black text-blue-400 uppercase tracking-widest">
+                                    <span className="flex items-center gap-2"><Icon name="Zap" /> Mana Energy</span>
+                                    <span>{Math.floor(mana)} / {MAX_MANA}</span>
                                 </div>
-                                <div className="grid grid-cols-4 gap-2">
+                                <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                                    <div className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 shadow-[0_0_15px_rgba(59,130,246,0.5)]" style={{ width: `${(mana/MAX_MANA)*100}%` }}></div>
+                                </div>
+                                <div className="grid grid-cols-4 gap-3">
                                     {Object.entries(SKILL_DATA).map(([id, skill]) => {
-                                        const currentCd = cooldowns[id];
-                                        const maxCd = skill.cd * 10;
-                                        const cdPercent = currentCd > 0 ? (currentCd / maxCd) * 100 : 0;
-                                        
+                                        const cur = cooldowns[id];
+                                        const max = skill.cd * 10;
                                         return (
-                                            <button 
-                                                key={id} 
-                                                onClick={() => castSpell(parseInt(id))} 
-                                                disabled={currentCd > 0 || gameState !== 'PLAYING'} 
-                                                className={`relative flex flex-col items-center gap-1 p-2 rounded-lg border-2 transition-all overflow-hidden ${currentCd > 0 ? 'bg-slate-900 border-slate-800' : 'bg-slate-700 border-slate-600 hover:bg-slate-600 active:scale-90'}`}
-                                            >
-                                                {/* 쿨타임 오버레이 추가 */}
-                                                {currentCd > 0 && (
-                                                    <div 
-                                                        className="absolute bottom-0 left-0 w-full bg-black/60 cooldown-overlay" 
-                                                        style={{ height: `${cdPercent}%` }}
-                                                    ></div>
-                                                )}
-                                                
-                                                <div className="relative z-10 flex flex-col items-center">
-                                                    <Icon name={skill.icon} size={18} className={currentCd > 0 ? 'opacity-40' : ''} />
-                                                    <span className="text-[10px] font-bold">{skill.name}</span>
-                                                    <span className="text-[8px] text-slate-500 mt-0.5">Key: {skill.key}</span>
+                                            <button key={id} onClick={() => castSpell(parseInt(id))} disabled={cur > 0 || gameState !== 'PLAYING'} className={`group relative h-20 rounded-2xl border-2 transition-all overflow-hidden ${cur > 0 ? 'bg-slate-950 border-slate-900 opacity-50' : 'bg-slate-800 border-slate-600 hover:border-blue-400 active:scale-95'}`}>
+                                                <div className="relative z-10 flex flex-col items-center justify-center h-full">
+                                                    <Icon name={skill.icon} className={skill.color} size={24} />
+                                                    <span className="text-[10px] font-black mt-1">{skill.name}</span>
+                                                    <span className="text-[9px] opacity-40">{skill.key}</span>
                                                 </div>
-
-                                                {currentCd > 0 && (
-                                                    <div className="absolute inset-0 flex items-center justify-center z-20 font-bold text-sm text-white drop-shadow-lg">
-                                                        {(currentCd / 10).toFixed(1)}
-                                                    </div>
+                                                {cur > 0 && (
+                                                    <>
+                                                        <div className="absolute bottom-0 left-0 w-full bg-blue-600/20 cooldown-overlay" style={{ height: `${(cur/max)*100}%` }}></div>
+                                                        <div className="absolute inset-0 flex items-center justify-center z-20 text-2xl font-black">{(cur/10).toFixed(1)}</div>
+                                                    </>
                                                 )}
                                             </button>
                                         );
                                     })}
                                 </div>
                             </div>
-                            <div className="w-full md:w-56 bg-slate-950 rounded-lg p-2 border border-slate-800 flex flex-col h-32">
-                                <span className="text-[9px] text-slate-500 uppercase font-bold mb-1 border-b border-slate-800">Combat Log</span>
-                                <div className="flex-1 overflow-y-auto space-y-1 text-[10px] font-mono scrollbar-hide">
-                                    {logs.map((log) => (<div key={log.id} className={log.type === 'error' ? 'text-red-400' : log.type === 'warning' ? 'text-orange-300' : log.type === 'success' ? 'text-green-400' : 'text-slate-400'}>{log.msg}</div>))}
+                            <div className="w-full md:w-64 bg-black/60 rounded-2xl p-3 border border-slate-800 flex flex-col h-44">
+                                <span className="text-[10px] text-slate-500 font-black uppercase mb-2 border-b border-slate-800 pb-1">Combat Records</span>
+                                <div className="flex-1 overflow-y-auto space-y-1 text-[11px] scrollbar-hide">
+                                    {logs.map((log) => (<div key={log.id} className={log.type === 'error' ? 'text-red-500 font-bold' : log.type === 'warning' ? 'text-orange-400' : log.type === 'success' ? 'text-green-400' : 'text-slate-400'}>{log.msg}</div>))}
                                 </div>
                             </div>
                         </div>
 
-                        {/* Overlay */}
+                        {/* Overlays */}
                         {gameState !== 'PLAYING' && (
-                            <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 backdrop-blur-md">
-                                <div className="bg-slate-800 p-8 rounded-2xl border-2 border-slate-700 max-w-sm w-full text-center shadow-2xl">
-                                    <h1 className={`text-4xl font-black mb-4 ${gameState === 'WON' ? 'text-yellow-500' : gameState === 'LOST' ? 'text-red-500' : 'text-white'}`}>{gameState === 'START' ? 'MINI HEALER' : gameState === 'WON' ? 'VICTORY' : 'DEFEATED'}</h1>
-                                    <div className="text-slate-400 text-sm mb-6 space-y-2">
-                                        <p>드래곤으로부터 동료를 지키세요.</p>
-                                        <div className="bg-slate-900/50 p-3 rounded text-[11px] text-left border border-slate-700">
-                                            <p>⌨️ <strong>스킬:</strong> 1, 2, 3, 4</p>
-                                            <p>⌨️ <strong>대상 선택:</strong> Q, W, E</p>
+                            <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-[200] p-4 backdrop-blur-xl text-center">
+                                <div className="bg-slate-900 p-12 rounded-[3rem] border-4 border-slate-800 max-w-sm w-full shadow-2xl">
+                                    <h1 className={`text-5xl font-black mb-6 tracking-tighter ${gameState === 'WON' ? 'text-yellow-400' : gameState === 'LOST' ? 'text-red-600' : 'text-white'}`}>{gameState === 'START' ? 'MINI HEALER' : gameState === 'WON' ? 'VICTORY' : 'DEFEATED'}</h1>
+                                    <div className="text-slate-400 text-sm mb-10 space-y-4">
+                                        {gameState === 'START' ? <p>보스는 파티원뿐만 아니라 당신(힐러)도 공격합니다. 본인의 체력도 소홀히 하지 마세요!</p> : <p>{gameState === 'WON' ? "드래곤을 잠재웠습니다!" : "당신이 쓰러지면 파티도 무너집니다..."}</p>}
+                                        <div className="bg-black/50 p-4 rounded-2xl border border-slate-800 text-[10px] text-left space-y-1">
+                                            <p>⌨️ <span className="text-white font-bold">1,2,3,4</span> : 스킬 사용</p>
+                                            <p>⌨️ <span className="text-white font-bold">Q,W,E</span> : 파티원 타겟 선택</p>
+                                            <p>⌨️ <span className="text-white font-bold">S</span> : 본인(힐러) 타겟 선택</p>
                                         </div>
                                     </div>
-                                    <button onClick={startGame} className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"><Icon name="Sword" size={18} /> {gameState === 'START' ? '전투 시작' : '다시 도전'}</button>
+                                    <button onClick={startGame} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl text-xl shadow-lg active:scale-95 transition-all"><Icon name="Sword" size={24} className="inline mr-2" /> {gameState === 'START' ? '전투 개시' : '다시 도전'}</button>
                                 </div>
                             </div>
                         )}
