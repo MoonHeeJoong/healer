@@ -3,601 +3,806 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mini Healer Online - Challenge Edition</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & Babel CDNs -->
+    <title>레이드 시뮬레이터 - Rogue Expedition</title>
+    <!-- 외부 라이브러리 로드 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        @keyframes float-up-random {
-            0% { transform: translate(-50%, 0) scale(0.5); opacity: 1; }
-            100% { transform: translate(var(--tw-translate-x), -60px) scale(1.2); opacity: 0; }
-        }
-        .animate-float-up {
-            animation: float-up-random 0.8s ease-out forwards;
-        }
-        @keyframes particle-fade {
-            0% { transform: translate(0, 0) scale(1); opacity: 1; }
-            100% { transform: translate(var(--move-x), var(--move-y)) scale(0); opacity: 0; }
-        }
-        .particle {
-            position: absolute;
-            pointer-events: none;
-            animation: particle-fade 0.6s ease-out forwards;
-        }
-        @keyframes screen-shake {
-            0%, 100% { transform: translate(0, 0); }
-            10%, 30%, 50%, 70%, 90% { transform: translate(-4px, -4px); }
-            20%, 40%, 60%, 80% { transform: translate(4px, 4px); }
-        }
-        .shake { animation: screen-shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
-        
-        @keyframes flash-red {
-            0% { background-color: rgba(220, 38, 38, 0); }
-            20% { background-color: rgba(220, 38, 38, 0.4); }
-            100% { background-color: rgba(220, 38, 38, 0); }
-        }
-        .flash-hit { animation: flash-red 0.3s ease-out; }
+        @import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;700;900&display=swap');
 
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .attack-gauge { transition: width 0.1s linear; }
-        .boss-breathing { animation: pulse 2s infinite ease-in-out; }
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.05); }
+        body {
+            background-color: #050505;
+            color: #f8f8f8;
+            font-family: 'Noto Sans KR', sans-serif;
+            margin: 0;
+            overflow-x: hidden;
         }
+
+        .font-black { font-weight: 900; }
+        
+        /* 애니메이션 정의 */
+        @keyframes pop-fade-up {
+            0% { opacity: 0; transform: translate(-50%, 0%) scale(0.6); }
+            20% { opacity: 1; transform: translate(-50%, -40px) scale(1.3); }
+            100% { opacity: 0; transform: translate(-50%, -100px) scale(1); }
+        }
+        .animate-combat-text { 
+            position: absolute;
+            animation: pop-fade-up 0.6s ease-out forwards; 
+            pointer-events: none; 
+            z-index: 100; 
+        }
+        
+        @keyframes projectile-move {
+            0% { left: var(--start-x); top: var(--start-y); opacity: 0; transform: translate(-50%, -50%) rotate(var(--angle)) scale(0.5); }
+            20% { opacity: 1; }
+            85% { opacity: 1; }
+            100% { left: var(--end-x); top: var(--end-y); opacity: 0; transform: translate(-50%, -50%) rotate(var(--angle)) scale(1.2); }
+        }
+        .animate-projectile { 
+            position: absolute; 
+            animation: projectile-move 0.65s ease-in-out forwards; 
+            z-index: 60; 
+            pointer-events: none; 
+        }
+        
+        @keyframes heal-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); background-color: rgba(34,197,94,0.3); } }
+        .animate-heal-pulse { animation: heal-pulse 0.5s ease-out; }
+        
+        @keyframes shield-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); background-color: rgba(59,130,246,0.3); } }
+        .animate-shield-pulse { animation: shield-pulse 0.5s ease-out; }
+
+        @keyframes shake { 0%, 100% { transform: translate(0,0); } 10%, 30%, 50%, 70%, 90% { transform: translate(-4px,-4px); } 20%, 40%, 60%, 80% { transform: translate(4px,4px); } }
+        .shake { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+        
+        .boss-breathing { animation: pulse 2s infinite ease-in-out; }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+
+        .attack-gauge { transition: width 0.1s linear; }
+        .interactive { cursor: pointer; touch-action: manipulation; }
+        .strong-shadow { text-shadow: 2px 2px 4px rgba(0,0,0,1), -1px -1px 0 rgba(0,0,0,1); }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
     </style>
 </head>
-<body class="bg-black">
+<body class="no-select">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useRef } = React;
+        const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
-        // --- 아이콘 컴포넌트 ---
+        // --- Lucide 아이콘 브릿지 ---
         const Icon = ({ name, size = 20, className = "" }) => {
-            const icons = {
-                Heart: <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />,
-                Shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
-                Zap: <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
-                Flame: <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />,
-                User: (<><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>),
-                Activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" />,
-                AlertCircle: (<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>),
-                Sword: (<><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="20" y2="20" /><line x1="20" y1="20" x2="21" y2="19" /></>),
-                Trophy: <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.45 1-1 1H8v2h8v-2h-1c-.55 0-1-.45-1-1v-2.34M12 2C7.58 2 4 5.58 4 10c0 1.94.7 3.72 1.86 5.11l1.41-1.41C6.47 12.63 6 11.37 6 10c0-3.31 2.69-6 6-6s6 2.69 6 6c0 1.37-.47 2.63-1.27 3.7l1.41 1.41C19.3 13.72 20 11.94 20 10c0-4.42-3.58-8-8-8z" />
+            const [iconContent, setIconContent] = useState("");
+            
+            useEffect(() => {
+                // Lucide 아이콘을 텍스트로 변환하여 렌더링
+                const svg = lucide.createIcons({
+                    icons: { [name]: true },
+                    attrs: { width: size, height: size, class: className }
+                });
+            }, [name, size, className]);
+
+            // React 컴포넌트 내에서 Lucide를 직접 쓰기 어려우므로 SVG 패스를 직접 정의하거나 
+            // lucide-react 대신 단순 아이콘 매핑을 사용 (배포용 안정성 우선)
+            const iconMap = {
+                Heart: "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z",
+                Shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
+                Zap: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+                User: "M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+                Sword: "M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4",
+                Coins: "M8 8a6 6 0 1 0 0 12A6 6 0 0 0 8 8z M18 8a6 6 0 0 1-7.74 5.74 M12 18a6 6 0 0 1-5.74-7.74",
+                Book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z",
+                ShoppingCart: "M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6",
+                Activity: "M22 12h-4l-3 9L9 3l-3 9H2",
+                Flame: "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z",
+                Box: "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z M3.3 7l8.7 5 8.7-5 M12 22V12",
+                Star: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+                Backpack: "M4 10V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6 M8 2v4 M16 2v4 M4 10h16v9a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-9z M9 14h6",
+                Users: "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75",
+                Trophy: "M6 9H4.5a2.5 2.5 0 0 1 0-5H6 M18 9h1.5a2.5 2.5 0 0 0 0-5H18 M4 22h16 M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22 M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22 M18 2H6v7a6 6 0 0 0 12 0V2z"
             };
+
             return (
-                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-                    {icons[name]}
+                <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    <path d={iconMap[name] || ""}></path>
                 </svg>
             );
         };
 
-        const App = () => {
-            const TICK_RATE = 100;
-            const MAX_MANA = 200;
+        // --- 상수 데이터 ---
+        const ALL_SKILLS = {
+            1: { name: '순간 치유', mana: 15, cd: 1.2, icon: 'Heart', desc: '대상을 즉시 빠르게 치유합니다.' },
+            2: { name: '재생(HoT)', mana: 20, cd: 4, icon: 'Activity', desc: '지속적으로 체력을 회복시킵니다.' },
+            3: { name: '신의 보호막', mana: 25, cd: 7, icon: 'Shield', desc: '피해를 흡수하는 보호막을 생성합니다.' },
+            4: { name: '성스러운 폭발', mana: 50, cd: 12, icon: 'Flame', desc: '파티원 전체를 동시에 치유합니다.' },
+            5: { name: '상급 치유', mana: 35, cd: 3.0, icon: 'Heart', desc: '느리지만 매우 큰 생명력을 회복합니다.' },
+            6: { name: '기적의 기도', mana: 60, cd: 20, icon: 'Star', desc: '파티 전체를 전설의 힘으로 대폭 회복합니다.' },
+            7: { name: '명상', mana: 0, cd: 30, icon: 'Zap', desc: '즉시 마나를 100 회복합니다.' },
+            8: { name: '천상의 방벽', mana: 45, cd: 15, icon: 'Shield', desc: '파티원 전체에게 강력한 보호막을 씌웁니다.' }
+        };
 
-            // 난이도별 설정값
-            const DIFFICULTY_CONFIG = {
-                EASY: {
-                    label: '이지',
-                    bossMaxHp: 60000,
-                    attackInterval: 3000,
-                    enragedInterval: 1800,
-                    manaRegen: 1.0,
-                    damageMultiplier: 0.8,
-                    color: 'text-green-400',
-                    bgColor: 'bg-green-600'
-                },
-                NORMAL: {
-                    label: '노멀',
-                    bossMaxHp: 90000,
-                    attackInterval: 2400,
-                    enragedInterval: 1400,
-                    manaRegen: 0.8,
-                    damageMultiplier: 1.1,
-                    color: 'text-yellow-400',
-                    bgColor: 'bg-yellow-600'
-                },
-                HARD: {
-                    label: '하드',
-                    bossMaxHp: 130000,
-                    attackInterval: 1800,
-                    enragedInterval: 1000,
-                    manaRegen: 0.5,
-                    damageMultiplier: 1.5,
-                    color: 'text-red-500',
-                    bgColor: 'bg-red-600'
-                }
-            };
+        const ENEMIES = [
+            { name: "고블린 수색대", emoji: "👺", hpFactor: 0.15, specialSpeed: 1.2 },
+            { name: "정예 오크 전사", emoji: "👹", hpFactor: 0.45, specialSpeed: 2.0 },
+            { name: "고대 흑룡 (BOSS)", emoji: "🐲", hpFactor: 1.2, specialSpeed: 3.2 }
+        ];
 
-            const SKILL_DATA = {
-                1: { name: '순간 치유', mana: 15, cd: 1.2, icon: 'Heart', key: '1', color: 'text-green-400' },
-                2: { name: '재생(HoT)', mana: 20, cd: 4, icon: 'Activity', key: '2', color: 'text-emerald-300' },
-                3: { name: '신의 보호막', mana: 25, cd: 7, icon: 'Shield', key: '3', color: 'text-blue-300' },
-                4: { name: '성스러운 폭발', mana: 50, cd: 12, icon: 'AlertCircle', key: '4', color: 'text-yellow-200' }
-            };
+        const ITEM_POOLS = [
+            { id: 'i1', name: '녹슨 검', type: 'weapon', target: 'DPS', stat: 'attack', value: 120, rarity: 'Common' },
+            { id: 'i2', name: '강화 방패', type: 'weapon', target: 'Tank', stat: 'defense', value: 250, rarity: 'Common' },
+            { id: 'i3', name: '참나무 지팡이', type: 'weapon', target: 'HEALER', stat: 'heal', value: 1.2, rarity: 'Common' },
+            { id: 'i4', name: '모험가 로브', type: 'armor', target: 'ANY', stat: 'hp', value: 300, rarity: 'Common' },
+            { id: 'i5', name: '발뭉 (명검)', type: 'weapon', target: 'DPS', stat: 'attack', value: 450, rarity: 'Rare' },
+            { id: 'i6', name: '성기사의 갑주', type: 'armor', target: 'Tank', stat: 'hp', value: 1000, rarity: 'Rare' },
+            { id: 'l1', name: '드래곤 슬레이어', type: 'weapon', target: 'DPS', stat: 'attack', value: 950, rarity: 'Legendary' },
+            { id: 'l2', name: '불멸의 방패', type: 'weapon', target: 'Tank', stat: 'defense', value: 1800, rarity: 'Legendary' },
+            { id: 'l3', name: '대천사의 성물', type: 'weapon', target: 'HEALER', stat: 'heal', value: 1.8, rarity: 'Legendary' },
+            { id: 'l4', name: '용의 비늘 갑옷', type: 'armor', target: 'ANY', stat: 'hp', value: 2500, rarity: 'Legendary' }
+        ];
 
-            const [gameState, setGameState] = useState('START');
-            const [difficulty, setDifficulty] = useState('NORMAL');
-            const [bossHp, setBossHp] = useState(0);
-            const [bossMaxHp, setBossMaxHp] = useState(0);
-            const [mana, setMana] = useState(MAX_MANA);
-            const [selectedTarget, setSelectedTarget] = useState(0);
-            
-            const [player, setPlayer] = useState({ hp: 500, maxHp: 500, shield: 0, hot: 0, emoji: '🧙' });
-            const [party, setParty] = useState([
-                { id: 0, name: '전사', role: 'Tank', hp: 1200, maxHp: 1200, hot: 0, shield: 0, dead: false, emoji: '🛡️', key: 'Q', attackProgress: 0 },
-                { id: 1, name: '도적', role: 'DPS', hp: 600, maxHp: 600, hot: 0, shield: 0, dead: false, emoji: '🗡️', key: 'W', attackProgress: 0 },
-                { id: 2, name: '법사', role: 'DPS', hp: 450, maxHp: 450, hot: 0, shield: 0, dead: false, emoji: '🪄', key: 'E', attackProgress: 0 },
-            ]);
+        const UPGRADE_CARDS = [
+            { id: 'u1', name: '생명의 흐름', desc: '치유 효율 +25%', icon: 'Heart', color: 'text-green-400' },
+            { id: 'u2', name: '마나의 샘', desc: '마나 재생 +35%', icon: 'Zap', color: 'text-blue-400' },
+            { id: 'u3', name: '철벽의 가호', desc: '보호막 강도 +30%', icon: 'Shield', color: 'text-cyan-400' },
+            { id: 'u4', name: '신속한 기도', desc: '스킬 쿨다운 -20%', icon: 'Activity', color: 'text-yellow-400' },
+            { id: 'u5', name: '오버힐 축복', desc: '초과 치유의 25%를 보호막으로', icon: 'Star', color: 'text-purple-400' }
+        ];
 
-            const [cooldowns, setCooldowns] = useState({ 1: 0, 2: 0, 3: 0, 4: 0 });
-            const [logs, setLogs] = useState([{ msg: "난이도를 선택하고 전투를 시작하세요.", type: "system", id: 'init-log' }]);
-            
-            const [combatEffects, setCombatEffects] = useState([]);
-            const [particles, setParticles] = useState([]);
-            const [bossAction, setBossAction] = useState('');
-            const [hitTargets, setHitTargets] = useState([]);
-            const [screenFlash, setScreenFlash] = useState(false);
-            const [isShaking, setIsShaking] = useState(false);
+        const UNIT_COORD = {
+            boss: { x: 50, y: 22 },
+            'p-0': { x: 15, y: 78 },
+            'p-1': { x: 38, y: 78 },
+            'p-2': { x: 62, y: 78 },
+            'p-player': { x: 85, y: 78 }
+        };
 
-            const gameLoopRef = useRef(null);
-            const lastBossAttackRef = useRef(Date.now());
+        // --- 서브 컴포넌트 정의 ---
 
-            const triggerScreenEffect = (type) => {
-                if (type === 'damage') {
-                    setScreenFlash(true);
-                    setIsShaking(true);
-                    setTimeout(() => { setScreenFlash(false); setIsShaking(false); }, 300);
-                }
-            };
-
-            const spawnParticles = (targetId, type) => {
-                const colors = { damage: '#ef4444', heal: '#4ade80', shield: '#60a5fa' };
-                const newParticles = Array.from({ length: 8 }).map(() => ({
-                    id: Math.random(),
-                    targetId,
-                    color: colors[type],
-                    moveX: (Math.random() - 0.5) * 100 + 'px',
-                    moveY: (Math.random() - 0.5) * 100 + 'px',
-                }));
-                setParticles(prev => [...prev, ...newParticles]);
-                setTimeout(() => {
-                    setParticles(prev => prev.filter(p => !newParticles.find(np => np.id === p.id)));
-                }, 600);
-            };
-
-            const triggerCombatText = (targetId, value, type, isCrit = false) => {
-                const id = Math.random();
-                const randomX = (Math.random() - 0.5) * 40;
-                setCombatEffects(prev => [...prev, { id, targetId, value, type, isCrit, x: randomX }]);
-                spawnParticles(targetId, type);
-                setTimeout(() => {
-                    setCombatEffects(prev => prev.filter(e => e.id !== id));
-                }, 800);
-            };
-
-            const damageTarget = (type, index, amount, isMajor = false) => {
-                const config = DIFFICULTY_CONFIG[difficulty];
-                const finalDamage = amount * config.damageMultiplier;
-
-                if (isMajor) triggerScreenEffect('damage');
-
-                if (type === 'player') {
-                    setPlayer(prev => {
-                        let remainingDamage = finalDamage;
-                        let newShield = prev.shield;
-                        if (newShield > 0) {
-                            const absorbed = Math.min(newShield, remainingDamage);
-                            newShield -= absorbed;
-                            remainingDamage -= absorbed;
-                            triggerCombatText(`p-player`, `방어됨`, "shield");
-                        }
-                        const newHp = Math.max(0, prev.hp - remainingDamage);
-                        if (remainingDamage > 0) {
-                            triggerCombatText(`p-player`, `-${Math.ceil(remainingDamage)}`, "damage", remainingDamage > 100);
-                            setHitTargets(prevHit => [...prevHit, 'player']);
-                            setTimeout(() => setHitTargets(prevHit => prevHit.filter(i => i !== 'player')), 200);
-                        }
-                        return { ...prev, hp: newHp, shield: newShield };
-                    });
-                } else {
-                    setParty(prev => {
-                        const newParty = [...prev];
-                        if (newParty[index].dead) return prev;
-                        let remainingDamage = finalDamage;
-                        if (newParty[index].shield > 0) {
-                            const absorbed = Math.min(newParty[index].shield, remainingDamage);
-                            newParty[index].shield -= absorbed;
-                            remainingDamage -= absorbed;
-                            triggerCombatText(`p-${index}`, `방어됨`, "shield");
-                        }
-                        if (remainingDamage > 0) {
-                            newParty[index].hp = Math.max(0, newParty[index].hp - remainingDamage);
-                            triggerCombatText(`p-${index}`, `-${Math.ceil(remainingDamage)}`, "damage", remainingDamage > 150);
-                            setHitTargets(prevHit => [...prevHit, index]);
-                            setTimeout(() => setHitTargets(prevHit => prevHit.filter(i => i !== index)), 200);
-                        }
-                        if (newParty[index].hp <= 0 && !newParty[index].dead) {
-                            newParty[index].dead = true;
-                            addLog(`${newParty[index].name} 사망!`, "error");
-                        }
-                        return newParty;
-                    });
-                }
-            };
-
-            const healTarget = (type, index, amount) => {
-                const isCrit = Math.random() > 0.85;
-                const finalHeal = isCrit ? amount * 1.8 : amount;
-
-                if (type === 'player') {
-                    setPlayer(prev => {
-                        const actualHeal = Math.min(prev.maxHp - prev.hp, finalHeal);
-                        if (actualHeal > 0 || isCrit) {
-                            triggerCombatText(`p-player`, `${isCrit ? '⭐' : ''}+${Math.ceil(finalHeal)}`, "heal", isCrit);
-                        }
-                        return { ...prev, hp: prev.hp + actualHeal };
-                    });
-                } else {
-                    setParty(prev => {
-                        const newParty = [...prev];
-                        if (newParty[index].dead) return prev;
-                        const actualHeal = Math.min(newParty[index].maxHp - newParty[index].hp, finalHeal);
-                        if (actualHeal > 0 || isCrit) {
-                            newParty[index].hp += actualHeal;
-                            triggerCombatText(`p-${index}`, `${isCrit ? '⭐' : ''}+${Math.ceil(finalHeal)}`, "heal", isCrit);
-                        }
-                        return newParty;
-                    });
-                }
-            };
-
-            const castSpell = useCallback((spellId) => {
-                if (gameState !== 'PLAYING') return;
-                const spell = SKILL_DATA[spellId];
-                if (mana < spell.mana) { addLog("마나 부족!", "error"); return; }
-                if (cooldowns[spellId] > 0) return;
-
-                const targetType = selectedTarget === 3 ? 'player' : 'party';
-                const targetIdx = selectedTarget === 3 ? null : selectedTarget;
-
-                if (spellId === 1) healTarget(targetType, targetIdx, 180);
-                if (spellId === 2) {
-                    if (targetType === 'player') {
-                        setPlayer(prev => ({ ...prev, hot: 12 }));
-                        triggerCombatText(`p-player`, "재생", "heal");
-                    } else {
-                        setParty(prev => {
-                            const next = [...prev];
-                            next[targetIdx].hot = 12;
-                            triggerCombatText(`p-${targetIdx}`, "재생", "heal");
-                            return next;
-                        });
-                    }
-                }
-                if (spellId === 3) {
-                    if (targetType === 'player') {
-                        setPlayer(prev => ({ ...prev, shield: 300 }));
-                        triggerCombatText(`p-player`, "보호막", "shield");
-                    } else {
-                        setParty(prev => {
-                            const next = [...prev];
-                            next[targetIdx].shield = 350;
-                            triggerCombatText(`p-${targetIdx}`, "보호막", "shield");
-                            return next;
-                        });
-                    }
-                }
-                if (spellId === 4) {
-                    party.forEach((_, i) => healTarget('party', i, 120));
-                    healTarget('player', null, 100);
-                    addLog("성스러운 폭발!", "success");
-                }
-
-                setMana(m => Math.max(0, m - spell.mana));
-                setCooldowns(prev => ({ ...prev, [spellId]: spell.cd * 10 }));
-            }, [gameState, mana, cooldowns, selectedTarget, party]);
-
-            const addLog = (msg, type = "normal") => {
-                const newId = `${Date.now()}-${Math.random()}`;
-                setLogs(prev => [{ msg, type, id: newId }, ...prev].slice(0, 8));
-            };
-
-            useEffect(() => {
-                const handleKeyDown = (e) => {
-                    if (gameState !== 'PLAYING') return;
-                    if (['1', '2', '3', '4'].includes(e.key)) castSpell(parseInt(e.key));
-                    if (e.key.toUpperCase() === 'Q') setSelectedTarget(0);
-                    if (e.key.toUpperCase() === 'W') setSelectedTarget(1);
-                    if (e.key.toUpperCase() === 'E') setSelectedTarget(2);
-                    if (e.key.toUpperCase() === 'S') setSelectedTarget(3);
-                };
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [gameState, castSpell]);
-
-            useEffect(() => {
-                if (gameState === 'PLAYING') {
-                    const config = DIFFICULTY_CONFIG[difficulty];
-                    gameLoopRef.current = setInterval(() => {
-                        setMana(m => Math.min(MAX_MANA, m + config.manaRegen));
-                        setCooldowns(prev => {
-                            const next = { ...prev };
-                            Object.keys(next).forEach(k => { if (next[k] > 0) next[k] -= 1; });
-                            return next;
-                        });
-
-                        const isBossEnraged = bossHp < bossMaxHp * 0.35;
-
-                        // 파티 업데이트
-                        setParty(prev => {
-                            let totalDpsThisTick = 0;
-                            const next = prev.map((m, i) => {
-                                if (m.dead) return m;
-                                const speed = m.role === 'Tank' ? 10 : (m.name === '도적' ? 18 : 8);
-                                let newProgress = m.attackProgress + speed;
-                                if (newProgress >= 100) {
-                                    const damage = (m.role === 'Tank' ? 600 : (m.name === '법사' ? 3800 : 2200));
-                                    totalDpsThisTick += damage;
-                                    newProgress = 0;
-                                    triggerCombatText('boss', `-${damage}`, 'damage');
-                                }
-                                let nextHp = m.hp;
-                                let nextHot = m.hot;
-                                if (m.hot > 0) {
-                                    nextHp = Math.min(m.maxHp, m.hp + 20);
-                                    nextHot = m.hot - 1;
-                                    if (m.hot % 4 === 0) triggerCombatText(`p-${i}`, `+20`, "heal");
-                                }
-                                return { ...m, hp: nextHp, hot: nextHot, attackProgress: newProgress };
-                            });
-                            if (totalDpsThisTick > 0) setBossHp(h => Math.max(0, h - totalDpsThisTick / 10));
-                            return next;
-                        });
-
-                        // 플레이어 업데이트
-                        setPlayer(prev => {
-                            let nextHp = prev.hp;
-                            let nextHot = prev.hot;
-                            if (prev.hot > 0) {
-                                nextHp = Math.min(prev.maxHp, prev.hp + 15);
-                                nextHot = prev.hot - 1;
-                                if (prev.hot % 4 === 0) triggerCombatText(`p-player`, `+15`, "heal");
-                            }
-                            return { ...prev, hp: nextHp, hot: nextHot };
-                        });
-
-                        // 보스 공격
-                        const now = Date.now();
-                        const attackInterval = isBossEnraged ? config.enragedInterval : config.attackInterval;
-                        if (now - lastBossAttackRef.current > attackInterval) {
-                            lastBossAttackRef.current = now;
-                            const rand = Math.random();
-                            if (rand < 0.55) {
-                                setBossAction('attacking');
-                                setTimeout(() => { damageTarget('party', 0, 300, true); setBossAction(''); }, 400);
-                            } else if (rand < 0.8) {
-                                setBossAction('aoe');
-                                setTimeout(() => { 
-                                    [0, 1, 2].forEach(i => damageTarget('party', i, 130, true));
-                                    damageTarget('player', null, 100);
-                                    setBossAction(''); 
-                                }, 600);
-                                addLog("광포한 화염 숨결!", "warning");
-                            } else {
-                                const t = Math.floor(Math.random() * 4);
-                                setBossAction('attacking');
-                                setTimeout(() => { 
-                                    if (t === 3) damageTarget('player', null, 180, true);
-                                    else damageTarget('party', t, 220, true);
-                                    setBossAction(''); 
-                                }, 400);
-                            }
-                        }
-                    }, TICK_RATE);
-                } else { clearInterval(gameLoopRef.current); }
-                return () => clearInterval(gameLoopRef.current);
-            }, [gameState, party, bossHp, difficulty, bossMaxHp]);
-
-            useEffect(() => {
-                if (bossHp <= 0 && gameState === 'PLAYING') setGameState('WON');
-                if ((party.every(m => m.dead) || player.hp <= 0) && gameState === 'PLAYING') setGameState('LOST');
-            }, [bossHp, party, player.hp, gameState]);
-
-            const startGame = (diff) => {
-                const config = DIFFICULTY_CONFIG[diff];
-                setDifficulty(diff);
-                setBossMaxHp(config.bossMaxHp);
-                setBossHp(config.bossMaxHp);
-                setMana(MAX_MANA);
-                setPlayer({ hp: 500, maxHp: 500, shield: 0, hot: 0, emoji: '🧙' });
-                setParty([
-                    { id: 0, name: '전사', role: 'Tank', hp: 1200, maxHp: 1200, hot: 0, shield: 0, dead: false, emoji: '🛡️', key: 'Q', attackProgress: 0 },
-                    { id: 1, name: '도적', role: 'DPS', hp: 600, maxHp: 600, hot: 0, shield: 0, dead: false, emoji: '🗡️', key: 'W', attackProgress: 0 },
-                    { id: 2, name: '법사', role: 'DPS', hp: 450, maxHp: 450, hot: 0, shield: 0, dead: false, emoji: '🪄', key: 'E', attackProgress: 0 },
-                ]);
-                setGameState('PLAYING');
-                addLog(`${config.label} 난이도로 전투를 시작합니다!`, "system");
-            };
-
-            return (
-                <div className={`min-h-screen bg-slate-950 text-slate-100 p-4 font-sans flex flex-col items-center justify-center select-none overflow-hidden ${isShaking ? 'shake' : ''}`}>
-                    {screenFlash && <div className="fixed inset-0 flash-hit z-[100] pointer-events-none" />}
-                    
-                    <div className="max-w-4xl w-full flex flex-col gap-4 relative">
-                        
-                        {/* Battle Arena */}
-                        <div className="relative h-72 bg-slate-900 rounded-3xl border-4 border-slate-800 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden flex flex-col items-center justify-center p-4">
-                            {/* Current Difficulty Badge */}
-                            <div className="absolute top-4 right-6 flex items-center gap-2 px-3 py-1 bg-black/40 rounded-full border border-slate-700">
-                                <Icon name="Trophy" size={14} className={DIFFICULTY_CONFIG[difficulty].color} />
-                                <span className={`text-[10px] font-black uppercase ${DIFFICULTY_CONFIG[difficulty].color}`}>
-                                    {DIFFICULTY_CONFIG[difficulty].label} 모드
-                                </span>
-                            </div>
-
-                            <div className={`absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] ${bossHp < bossMaxHp * 0.35 ? 'from-red-900/40' : 'from-blue-900/20'} via-transparent to-transparent opacity-50`}></div>
-                            
-                            {/* Boss */}
-                            <div className={`relative transition-all duration-300 mb-8 boss-breathing ${bossAction === 'attacking' ? 'translate-y-6 scale-125' : bossAction === 'aoe' ? 'scale-150' : ''}`}>
-                                <div className={`text-9xl filter drop-shadow-[0_0_20px_rgba(239,68,68,0.6)] ${bossHp < bossMaxHp * 0.35 ? 'hue-rotate-[320deg]' : ''}`}>🐲</div>
-                                {combatEffects.filter(e => e.targetId === 'boss').map(effect => (
-                                    <div key={effect.id} style={{'--tw-translate-x': effect.x + 'px'}} className={`absolute top-0 left-1/2 -translate-x-1/2 font-black italic animate-float-up z-20 text-red-500 ${effect.isCrit ? 'text-4xl' : 'text-2xl'}`}>{effect.value}</div>
-                                ))}
-                            </div>
-
-                            <div className="flex gap-12 items-end relative z-20">
-                                {party.map((member, i) => (
-                                    <div key={member.id} className={`relative flex flex-col items-center transition-all duration-300 ${hitTargets.includes(i) ? 'scale-90 opacity-80' : ''}`}>
-                                        <div className={`text-5xl mb-2 transition-transform ${member.dead ? 'grayscale opacity-20 rotate-90 scale-75' : ''} ${selectedTarget === i ? 'drop-shadow-[0_0_12px_rgba(59,130,246,1)] scale-110' : ''}`}>
-                                            {member.emoji}
-                                        </div>
-                                        {combatEffects.filter(e => e.targetId === `p-${i}`).map(effect => (
-                                            <div key={effect.id} style={{'--tw-translate-x': effect.x + 'px'}} className={`absolute -top-12 left-1/2 font-bold whitespace-nowrap animate-float-up z-30 ${effect.type === 'damage' ? 'text-red-500' : effect.type === 'heal' ? 'text-green-400' : 'text-blue-400'}`}>{effect.value}</div>
-                                        ))}
-                                        {selectedTarget === i && !member.dead && <div className="absolute -bottom-3 w-10 h-1.5 bg-blue-500 rounded-full animate-ping"></div>}
-                                    </div>
-                                ))}
-                                <div className={`relative flex flex-col items-center transition-all duration-300 ${hitTargets.includes('player') ? 'scale-90 opacity-80' : ''}`}>
-                                    <div className={`text-5xl mb-2 transition-transform ${selectedTarget === 3 ? 'drop-shadow-[0_0_12px_rgba(59,130,246,1)] scale-110' : 'opacity-70'}`}>
-                                        {player.emoji}
-                                    </div>
-                                    {combatEffects.filter(e => e.targetId === `p-player`).map(effect => (
-                                        <div key={effect.id} style={{'--tw-translate-x': effect.x + 'px'}} className={`absolute -top-12 left-1/2 font-bold whitespace-nowrap animate-float-up z-30 ${effect.type === 'damage' ? 'text-red-500' : effect.type === 'heal' ? 'text-green-400' : 'text-blue-400'}`}>{effect.value}</div>
-                                    ))}
-                                    {selectedTarget === 3 && <div className="absolute -bottom-3 w-10 h-1.5 bg-blue-500 rounded-full animate-ping"></div>}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Boss HP Bar */}
-                        <div className="bg-slate-900/80 rounded-2xl p-4 border-2 border-red-900 shadow-xl overflow-hidden backdrop-blur-md">
-                            <div className="flex justify-between items-end mb-2">
-                                <h2 className="text-xl font-black text-red-500 flex items-center gap-2"><Icon name="Flame" /> 드래곤 {bossHp < bossMaxHp * 0.35 && '광폭화!'}</h2>
-                                <div className="text-right font-mono text-lg">{Math.ceil(bossHp).toLocaleString()} HP</div>
-                            </div>
-                            <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
-                                <div className="h-full bg-red-600 transition-all duration-500" style={{ width: `${(bossHp/bossMaxHp)*100}%` }}></div>
-                            </div>
-                        </div>
-
-                        {/* Status List */}
-                        <div className="grid grid-cols-4 gap-3">
-                            {party.map((member, idx) => (
-                                <div key={member.id} onClick={() => !member.dead && setSelectedTarget(idx)} className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${member.dead ? 'bg-slate-900/30 border-slate-800' : selectedTarget === idx ? 'bg-slate-800 border-blue-500 ring-2 ring-blue-500/20' : 'bg-slate-800/80 border-slate-700'}`}>
-                                    <div className="flex justify-between text-[10px] font-bold mb-1"><span>{member.name}</span><span>{member.key}</span></div>
-                                    <div className="w-full bg-slate-950 h-4 rounded border border-slate-700 relative overflow-hidden mb-1">
-                                        <div className="absolute h-full bg-blue-400/40" style={{ width: `${(member.shield / member.maxHp) * 100}%`, left: `${(member.hp / member.maxHp) * 100}%` }}></div>
-                                        <div className={`h-full ${member.hp < member.maxHp * 0.3 ? 'bg-red-600' : 'bg-green-600'}`} style={{ width: `${(member.hp / member.maxHp) * 100}%` }}></div>
-                                        <div className="absolute inset-0 flex justify-center items-center text-[9px] font-black">{Math.ceil(member.hp)}</div>
-                                    </div>
-                                    <div className="w-full bg-slate-950 h-1 rounded-full overflow-hidden">
-                                        <div className="h-full bg-yellow-500 attack-gauge" style={{ width: `${member.attackProgress}%` }}></div>
-                                    </div>
-                                </div>
-                            ))}
-                            {/* Player Frame */}
-                            <div onClick={() => setSelectedTarget(3)} className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${selectedTarget === 3 ? 'bg-slate-800 border-blue-500 ring-2 ring-blue-500/20' : 'bg-blue-900/20 border-blue-900/40'}`}>
-                                <div className="flex justify-between text-[10px] font-bold mb-1 text-blue-300"><span>플레이어</span><span>S</span></div>
-                                <div className="w-full bg-slate-950 h-4 rounded border border-slate-700 relative overflow-hidden">
-                                    <div className="absolute h-full bg-blue-400/40" style={{ width: `${(player.shield / player.maxHp) * 100}%`, left: `${(player.hp / player.maxHp) * 100}%` }}></div>
-                                    <div className={`h-full ${player.hp < player.maxHp * 0.3 ? 'bg-red-600' : 'bg-blue-600'}`} style={{ width: `${(player.hp / player.maxHp) * 100}%` }}></div>
-                                    <div className="absolute inset-0 flex justify-center items-center text-[9px] font-black">{Math.ceil(player.hp)}</div>
-                                </div>
-                                <div className="flex gap-1 mt-1.5 h-3">
-                                    {player.hot > 0 && <Icon name="Activity" size={10} className="text-green-400" />}
-                                    {player.shield > 0 && <Icon name="Shield" size={10} className="text-blue-300" />}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Controls */}
-                        <div className="bg-slate-900/90 rounded-3xl p-6 border-2 border-slate-700 shadow-2xl flex flex-col md:flex-row gap-6">
-                            <div className="flex-1 space-y-4">
-                                <div className="flex justify-between items-center text-xs font-black text-blue-400 uppercase tracking-widest">
-                                    <span className="flex items-center gap-2"><Icon name="Zap" /> Mana Energy</span>
-                                    <span>{Math.floor(mana)} / {MAX_MANA}</span>
-                                </div>
-                                <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
-                                    <div className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 shadow-[0_0_15px_rgba(59,130,246,0.5)]" style={{ width: `${(mana/MAX_MANA)*100}%` }}></div>
-                                </div>
-                                <div className="grid grid-cols-4 gap-3">
-                                    {Object.entries(SKILL_DATA).map(([id, skill]) => {
-                                        const cur = cooldowns[id];
-                                        const max = skill.cd * 10;
-                                        return (
-                                            <button key={id} onClick={() => castSpell(parseInt(id))} disabled={cur > 0 || gameState !== 'PLAYING'} className={`group relative h-20 rounded-2xl border-2 transition-all overflow-hidden ${cur > 0 ? 'bg-slate-950 border-slate-900 opacity-50' : 'bg-slate-800 border-slate-600 hover:border-blue-400 active:scale-95'}`}>
-                                                <div className="relative z-10 flex flex-col items-center justify-center h-full">
-                                                    <Icon name={skill.icon} className={skill.color} size={24} />
-                                                    <span className="text-[10px] font-black mt-1">{skill.name}</span>
-                                                    <span className="text-[9px] opacity-40">{skill.key}</span>
-                                                </div>
-                                                {cur > 0 && (
-                                                    <>
-                                                        <div className="absolute bottom-0 left-0 w-full bg-blue-600/20 cooldown-overlay" style={{ height: `${(cur/max)*100}%` }}></div>
-                                                        <div className="absolute inset-0 flex items-center justify-center z-20 text-2xl font-black">{(cur/10).toFixed(1)}</div>
-                                                    </>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            <div className="w-full md:w-64 bg-black/60 rounded-2xl p-3 border border-slate-800 flex flex-col h-44">
-                                <span className="text-[10px] text-slate-500 font-black uppercase mb-2 border-b border-slate-800 pb-1">Combat Records</span>
-                                <div className="flex-1 overflow-y-auto space-y-1 text-[11px] scrollbar-hide">
-                                    {logs.map((log) => (<div key={log.id} className={log.type === 'error' ? 'text-red-500 font-bold' : log.type === 'warning' ? 'text-orange-400' : log.type === 'success' ? 'text-green-400' : 'text-slate-400'}>{log.msg}</div>))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Overlays */}
-                        {gameState !== 'PLAYING' && (
-                            <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-[200] p-4 backdrop-blur-xl text-center">
-                                <div className="bg-slate-900 p-8 rounded-[3rem] border-4 border-slate-800 max-w-lg w-full shadow-2xl">
-                                    <h1 className={`text-5xl font-black mb-6 tracking-tighter ${gameState === 'WON' ? 'text-yellow-400' : gameState === 'LOST' ? 'text-red-600' : 'text-white'}`}>
-                                        {gameState === 'START' ? 'MINI HEALER' : gameState === 'WON' ? 'VICTORY' : 'DEFEATED'}
-                                    </h1>
-                                    
-                                    {gameState === 'START' ? (
-                                        <div className="space-y-6">
-                                            <p className="text-slate-400 text-sm">도전할 난이도를 선택하세요. 난이도가 높을수록 보스는 강력해지며 마나 재생은 느려집니다.</p>
-                                            <div className="grid grid-cols-3 gap-3">
-                                                {Object.entries(DIFFICULTY_CONFIG).map(([key, config]) => (
-                                                    <button 
-                                                        key={key} 
-                                                        onClick={() => startGame(key)}
-                                                        className={`py-4 rounded-2xl font-black text-white transition-all hover:scale-105 active:scale-95 border-b-4 border-black/30 ${config.bgColor}`}
-                                                    >
-                                                        {config.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                            <div className="bg-black/50 p-4 rounded-2xl border border-slate-800 text-[10px] text-left space-y-1 mt-4">
-                                                <p>⌨️ <span className="text-white font-bold">1,2,3,4</span> : 스킬 사용</p>
-                                                <p>⌨️ <span className="text-white font-bold">Q,W,E</span> : 파티원 선택 / <span className="text-white font-bold">S</span> : 본인 선택</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-6">
-                                            <p className="text-slate-400">{gameState === 'WON' ? "위대한 치유사여, 당신이 세상을 구했습니다!" : "동료들과 당신이 모두 쓰러졌습니다..."}</p>
-                                            <button onClick={() => setGameState('START')} className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl text-xl shadow-lg active:scale-95 transition-all">
-                                                <Icon name="Sword" size={24} className="inline mr-2" /> 다시 시작
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
+        const LobbyView = ({ player, setView, setDifficulty, difficulty, startRaid }) => (
+            <div className="max-w-2xl mx-auto space-y-6 pt-10 px-4 pb-20 font-black">
+                <div className="bg-neutral-900 rounded-[3rem] p-8 border-4 border-neutral-800 shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 rotate-12"><Icon name="Sword" size={120} /></div>
+                    <h1 className="text-4xl italic text-blue-500 uppercase tracking-tighter mb-4 shadow-blue-900">Expedition HQ</h1>
+                    <div className="flex items-end gap-2 mb-2"><span className="text-xs text-neutral-500 font-bold uppercase tracking-widest">Level</span><span className="text-5xl text-white font-black">{player.level}</span></div>
+                    <div className="w-full bg-neutral-800 h-4 rounded-full overflow-hidden mb-2 border border-neutral-700 shadow-inner">
+                        <div className="h-full bg-blue-600 transition-all" style={{ width: `${(player.exp/player.nextLevelExp)*100}%` }} />
+                    </div>
+                    <div className="flex justify-between text-[11px] text-neutral-400 font-bold">
+                        <span>EXP: {player.exp} / {player.nextLevelExp}</span>
+                        <span className="text-yellow-400 flex items-center gap-1 font-black"><Icon name="Coins" size={14} /> {player.gold} Gold</span>
                     </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                    <button onClick={() => setView('SKILLS')} className="interactive flex items-center gap-4 p-6 bg-neutral-900 rounded-[2rem] border-2 border-neutral-800 hover:border-blue-500 transition-all shadow-xl active:scale-95 font-bold">
+                        <div className="p-3 bg-blue-500/20 text-blue-400 rounded-2xl"><Icon name="Book" size={24} /></div>
+                        <div className="text-left font-black"><div className="text-lg text-white">기술 연마</div><div className="text-xs text-neutral-500 uppercase">Skill Shop</div></div>
+                    </button>
+                    <button onClick={() => setView('PARTY')} className="interactive flex items-center gap-4 p-6 bg-neutral-900 rounded-[2rem] border-2 border-neutral-800 hover:border-emerald-500 transition-all shadow-xl active:scale-95 font-bold">
+                        <div className="p-3 bg-emerald-500/20 text-emerald-400 rounded-2xl font-black"><Icon name="Backpack" size={24} /></div>
+                        <div className="text-left font-black"><div className="text-lg text-white">파티 관리</div><div className="text-xs text-neutral-500 uppercase tracking-widest">Inventory</div></div>
+                    </button>
+                </div>
+
+                <div className="space-y-4 pt-4 font-black">
+                    <div className="flex gap-2 p-2 bg-neutral-900 rounded-[1.5rem] border-2 border-neutral-800">
+                        {['EASY', 'NORMAL', 'HARD'].map(d => (
+                            <button key={d} onClick={() => setDifficulty(d)} className={`flex-1 py-3 rounded-2xl text-xs font-black transition-all ${difficulty === d ? 'bg-blue-600 text-white shadow-lg' : 'text-neutral-400 hover:bg-neutral-800'}`}>{d}</button>
+                        ))}
+                    </div>
+                    <button onClick={() => startRaid(difficulty)} className="interactive w-full py-8 bg-blue-600 hover:bg-blue-500 rounded-[3rem] text-3xl italic uppercase shadow-blue-600/30 shadow-2xl transition-all active:scale-95 flex items-center justify-center gap-4 font-black">
+                        Enter Dungeon <Icon name="Activity" size={32} />
+                    </button>
+                </div>
+            </div>
+        );
+
+        const RaidView = ({ raidData, combatEffects, projectiles, player, selectedTarget, setSelectedTarget, castSpell, logs, flashes }) => (
+            <div className="max-w-4xl mx-auto space-y-6 pt-10 px-4 pb-24 relative font-black">
+                <div className="relative w-full aspect-[4/5] sm:aspect-[4/3] min-h-[580px] flex flex-col justify-between p-8 rounded-[3.5rem] border-4 border-neutral-900 bg-neutral-900/10 shadow-inner overflow-visible">
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-2 rounded-full border border-neutral-700 font-black italic tracking-widest text-xs z-[80] text-blue-400 uppercase shadow-lg">
+                        Area {raidData.stage} / {raidData.maxStages}
+                    </div>
+                    <div className="absolute inset-0 pointer-events-none z-[70] overflow-visible">
+                        {projectiles.map(p => (
+                            <div key={p.id} className="animate-projectile" style={{
+                                '--start-x': `${p.start.x}%`, '--start-y': `${p.start.y}%`, 
+                                '--end-x': `${p.end.x}%`, '--end-y': `${p.end.y}%`, 
+                                '--angle': `${p.angle}deg`
+                            }}>
+                                <div className={p.effectType === 'boss' ? "w-10 h-10 bg-red-600 rounded-full shadow-[0_0_30px_#ef4444]" : "w-14 h-1.5 bg-yellow-300 rounded-full"} />
+                            </div>
+                        ))}
+                        {combatEffects.map(e => (
+                            <div key={e.id} className="animate-combat-text font-black text-5xl" style={{
+                                left: `${UNIT_COORD[e.targetId].x}%`, 
+                                top: `${UNIT_COORD[e.targetId].y}%`, 
+                                color: e.type === 'damage' ? '#ef4444' : e.type === 'shield' ? '#60a5fa' : '#4ade80',
+                            }}>
+                                {e.value}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="w-full flex flex-col items-center pt-10 z-10 font-black">
+                        <div className={`text-[8rem] sm:text-[10rem] boss-breathing transition-all ${raidData.bossSpecialProgress >= 90 ? 'brightness-150 drop-shadow-[0_0_40px_#ef4444]' : ''}`}>
+                           {ENEMIES[raidData.stage - 1].emoji}
+                        </div>
+                        <h3 className="text-white text-xl font-black mb-2 italic uppercase tracking-tighter">{ENEMIES[raidData.stage - 1].name}</h3>
+                        <div className="w-full max-w-sm bg-neutral-950 h-5 rounded-full border-2 border-neutral-800 overflow-hidden shadow-inner mb-3">
+                            <div className="h-full bg-gradient-to-r from-red-800 to-red-600 transition-all duration-300" style={{ width: `${(raidData.bossHp/raidData.bossMaxHp)*100}%` }} />
+                        </div>
+                        <div className="w-full max-w-sm flex gap-2 px-1">
+                            <div className="flex-1 bg-neutral-950 h-3 rounded-full overflow-hidden shadow-inner border border-neutral-800"><div className="h-full bg-red-500 attack-gauge" style={{ width: `${raidData.bossAttackProgress}%` }} /></div>
+                            <div className="flex-1 bg-neutral-950 h-3 rounded-full overflow-hidden shadow-inner border border-neutral-800"><div className="h-full bg-purple-600 attack-gauge shadow-[0_0_15px_#a855f7]" style={{ width: `${raidData.bossSpecialProgress}%` }} /></div>
+                        </div>
+                        <div className="text-sm font-black text-red-500 mt-2 tracking-widest">{Math.ceil(raidData.bossHp).toLocaleString()} HP</div>
+                    </div>
+
+                    <div className="w-full grid grid-cols-4 gap-3 sm:gap-4 z-10 font-black font-black">
+                        {raidData.party.map((m, i) => (
+                            <div key={i} onClick={() => m.curHp > 0 && setSelectedTarget(i)} className={`interactive relative p-3 sm:p-4 rounded-[2.5rem] border-2 transition-all h-32 sm:h-44 flex flex-col justify-center text-center shadow-lg ${m.curHp <= 0 ? 'bg-black opacity-20 border-neutral-900' : selectedTarget === i ? 'bg-blue-900/40 border-blue-500 scale-105 shadow-blue-500/20' : 'bg-neutral-900 border-neutral-800'} ${flashes[`p-${i}`] === 'heal' ? 'animate-heal-pulse' : flashes[`p-${i}`] === 'shield' ? 'animate-shield-pulse' : ''} ${m.shield > 0 ? 'ring-4 ring-blue-500/40' : ''}`}>
+                                {m.curHp <= 0 && <div className="absolute inset-0 flex items-center justify-center z-[20] text-red-500 font-black text-xl italic uppercase">Dead</div>}
+                                {m.hot > 0 && <div className="absolute top-2 right-2 animate-pulse"><Icon name="Activity" className="text-green-400" /></div>}
+                                <div className="text-3xl sm:text-4xl pointer-events-none mb-2">{m.emoji}</div>
+                                <div className="text-[9px] sm:text-[10px] font-black uppercase text-neutral-400 mb-1">{m.name}</div>
+                                <div className="w-full bg-neutral-950 h-3 rounded-full overflow-hidden border border-neutral-800 shadow-inner mb-1 relative">
+                                    {m.shield > 0 && <div className="absolute h-full bg-cyan-400/80 transition-all shadow-[0_0_10px_#22d3ee]" style={{ width: `${(m.shield/m.maxHp)*100}%`, left: `${(m.curHp/m.maxHp)*100}%`, zIndex: 5 }} />}
+                                    <div className="h-full bg-green-600 transition-all" style={{ width: `${(m.curHp/m.maxHp)*100}%` }} />
+                                </div>
+                                <div className="w-full bg-neutral-950 h-1.5 rounded-full overflow-hidden border border-neutral-800"><div className="h-full bg-yellow-500 attack-gauge" style={{ width: `${m.attackProgress}%` }} /></div>
+                            </div>
+                        ))}
+                        <div onClick={() => setSelectedTarget(3)} className={`interactive relative p-3 sm:p-4 rounded-[2.5rem] border-2 transition-all h-32 sm:h-44 flex flex-col justify-center text-center shadow-lg font-black ${selectedTarget === 3 ? 'bg-blue-900/40 border-blue-500 scale-105 shadow-blue-500/30' : 'bg-blue-950/20 border-blue-900/40'} ${flashes['p-player'] === 'heal' ? 'animate-heal-pulse' : flashes['p-player'] === 'shield' ? 'animate-shield-pulse' : ''} ${raidData.playerShield > 0 ? 'ring-4 ring-blue-500/40' : ''}`}>
+                            <div className="text-3xl sm:text-4xl mb-2 font-black">🧙</div>
+                            <div className="text-[9px] sm:text-[10px] font-black uppercase text-blue-400 mb-1 italic tracking-widest font-black">HEALER</div>
+                            <div className="w-full bg-neutral-950 h-3 rounded-full overflow-hidden border border-neutral-800 shadow-inner relative">
+                                {raidData.playerShield > 0 && <div className="absolute h-full bg-cyan-400/80 transition-all shadow-[0_0_10px_#22d3ee]" style={{ width: `${(raidData.playerShield/player.maxHp)*100}%`, left: `${(raidData.playerCurHp/player.maxHp)*100}%`, zIndex: 5 }} />}
+                                <div className="h-full bg-blue-600 transition-all" style={{ width: `${(raidData.playerCurHp/player.maxHp)*100}%` }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-neutral-900 p-6 rounded-[3rem] border-2 border-neutral-800 flex flex-col lg:flex-row gap-6 shadow-2xl font-black">
+                    <div className="flex-1 space-y-4">
+                        <div className="flex justify-between items-center text-xs font-black text-blue-300 uppercase tracking-widest italic"><span>Mana Status</span><span>{Math.floor(raidData.mana)} / {raidData.maxMana}</span></div>
+                        <div className="w-full bg-neutral-950 h-4 rounded-full overflow-hidden shadow-inner border border-neutral-800"><div className="h-full bg-gradient-to-r from-blue-600 to-cyan-400 shadow-[0_0_15px_#2563eb]" style={{ width: `${(raidData.mana/raidData.maxMana)*100}%` }} /></div>
+                        <div className="grid grid-cols-4 gap-3">
+                            {player.equippedSkills.map(sid => {
+                                const s = ALL_SKILLS[sid];
+                                const cd = raidData.cooldowns[sid];
+                                return (
+                                    <button key={sid} onClick={() => castSpell(sid)} disabled={cd > 0} className={`interactive relative aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-1 transition-all ${cd > 0 ? 'bg-black border-neutral-900 opacity-40' : 'bg-neutral-800 border-neutral-700 hover:border-blue-500 active:scale-90 shadow-lg'}`}>
+                                        <Icon name={s.icon} className="text-white" size={20} />
+                                        <span className="text-[9px] sm:text-[10px] font-bold text-center text-white px-1 truncate w-full italic">{s.name}</span>
+                                        {cd > 0 && <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-xl font-black italic text-white">{(cd/10).toFixed(1)}</div>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                    <div className="w-full lg:w-80 bg-black/60 rounded-2xl p-4 border border-neutral-800 h-44 flex flex-col shadow-inner">
+                        <span className="text-[10px] font-black text-neutral-400 uppercase border-b border-neutral-800 pb-2 mb-2 italic tracking-widest">Tactical Feed</span>
+                        <div className="flex-1 overflow-y-auto space-y-1 text-[11px] font-mono tracking-tighter text-neutral-300">
+                            {logs.map(l => <div key={l.id} className={l.type==='error'?'text-red-400 font-bold':l.type==='success'?'text-blue-400 font-bold':'text-neutral-400'}>{l.msg}</div>)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const LootOverlay = ({ upgrades, items, gold, onSelectUpgrade }) => (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-2xl p-6 font-black font-black">
+                <div className="w-full max-w-4xl text-center space-y-10 font-black font-black">
+                    <div>
+                        <h2 className="text-6xl italic text-yellow-400 mb-2 uppercase tracking-tighter font-black">Area Secured!</h2>
+                        <div className="flex items-center justify-center gap-8 text-neutral-400 text-lg font-black uppercase tracking-widest">
+                            <span className="text-yellow-500 flex items-center gap-1"><Icon name="Coins" size={22}/> +{gold} Gold</span>
+                            <span className="text-blue-400 flex items-center gap-1"><Icon name="Box" size={22}/> Loot Secured</span>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10 font-black">
+                        <div className="bg-neutral-900/60 p-8 rounded-[3.5rem] border-2 border-neutral-800 font-black">
+                            <h3 className="text-xs uppercase tracking-[0.4em] text-neutral-500 mb-6 font-black">Final Boss Loot</h3>
+                            <div className="space-y-4 font-black">
+                                {items.map((it, idx) => (
+                                    <div key={idx} className={`p-6 rounded-3xl flex justify-between items-center border ${it.rarity === 'Legendary' ? 'bg-yellow-900/20 border-yellow-500 animate-pulse' : 'bg-black/60 border-neutral-700/50'}`}>
+                                        <div className="flex items-center gap-4"><div className={`p-3 rounded-xl ${it.rarity === 'Legendary' ? 'bg-yellow-600 text-black' : 'bg-neutral-800 text-yellow-400'}`}><Icon name="Sword" size={24}/></div><div className="text-left font-black"><div className={`text-lg ${it.rarity === 'Legendary' ? 'text-yellow-400' : 'text-white'}`}>{it.name}</div><div className="text-[10px] text-neutral-500 uppercase">{it.rarity} Gear</div></div></div>
+                                        <div className="text-base text-blue-400 font-bold">+{it.value}{it.stat === 'heal' ? 'x' : ''}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="space-y-4 font-black">
+                            <h3 className="text-xs uppercase tracking-[0.4em] text-neutral-500 mb-6 font-black">Choose Boon</h3>
+                            <div className="grid grid-cols-1 gap-4 font-black">
+                                {upgrades.map(card => (
+                                    <button key={card.id} onClick={() => onSelectUpgrade(card)} className="interactive group bg-neutral-900 p-6 rounded-[3rem] border-2 border-neutral-800 hover:border-yellow-500 flex items-center gap-5 transition-all shadow-xl font-black">
+                                        <div className={`p-4 bg-neutral-800 rounded-2xl group-hover:scale-110 transition-transform ${card.color}`}><Icon name={card.icon} size={28} /></div>
+                                        <div className="text-left font-black font-black"><div className="text-white text-lg font-black">{card.name}</div><div className="text-neutral-500 text-xs font-black">{card.desc}</div></div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const PartyGearView = ({ party, inventory, setView, onEquip, onUnequip }) => (
+            <div className="max-w-4xl mx-auto pt-10 space-y-8 font-bold px-4 pb-20 font-black font-black font-black font-black font-black">
+                <button onClick={() => setView('LOBBY')} className="text-neutral-500 hover:text-white flex items-center gap-2 uppercase tracking-widest font-black font-black">&larr; Return to HQ</button>
+                <h2 className="text-4xl italic text-emerald-500 border-l-8 border-emerald-500 pl-4 uppercase font-black tracking-tighter">Party Gear</h2>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 font-black">
+                    <div className="space-y-4 font-black">
+                    {party.map((m, mIdx) => (
+                        <div key={mIdx} className="bg-neutral-900 p-6 rounded-[3rem] border-4 border-neutral-800 shadow-2xl font-black font-black">
+                            <div className="flex items-center gap-4 mb-6 font-black font-black">
+                            <span className="text-5xl font-black">{m.emoji}</span>
+                            <div className="font-black"><div className="text-xl text-white font-black">{m.name}</div><div className="text-xs text-neutral-500 uppercase font-black">{m.role}</div></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 font-black">
+                            {['weapon', 'armor'].map(type => (
+                                <div key={type} className="bg-black/40 p-4 rounded-3xl border border-neutral-700 flex flex-col items-center gap-3 font-black">
+                                    <div className="text-[10px] text-neutral-500 uppercase font-black">{type}</div>
+                                    {m.equipment[type] ? (
+                                    <>
+                                        <div className={`text-sm text-center font-black ${m.equipment[type].rarity === 'Legendary' ? 'text-yellow-400' : 'text-blue-400'}`}>{m.equipment[type].name}</div>
+                                        <button onClick={() => onUnequip(m.id, type)} className="text-[11px] text-red-500 hover:bg-red-950/30 px-3 py-1.5 rounded-full border border-red-900/50 font-black transition-all">Unequip</button>
+                                    </>
+                                    ) : <div className="text-xs text-neutral-700 font-black">Empty Slot</div>}
+                                </div>
+                            ))}
+                            </div>
+                        </div>
+                    ))}
+                    </div>
+                    <div className="bg-neutral-900 p-8 rounded-[3.5rem] border-4 border-neutral-800 shadow-2xl h-fit font-black">
+                    <h3 className="text-xs uppercase tracking-[0.4em] text-neutral-500 mb-8 font-black">Vault Storage ({inventory.length})</h3>
+                    <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 scrollbar-hide font-black font-black">
+                        {inventory.length === 0 ? <div className="text-center py-20 text-neutral-700 font-black font-black">Vault is currently empty.</div> : 
+                        inventory.map((it, idx) => (
+                            <div key={idx} className={`p-5 rounded-3xl border-2 flex justify-between items-center transition-all ${it.rarity === 'Legendary' ? 'bg-yellow-950/20 border-yellow-500 shadow-yellow-900/10' : 'bg-black/40 border-neutral-700'}`}>
+                                <div className="text-left font-black">
+                                <div className={`text-base font-black ${it.rarity === 'Legendary' ? 'text-yellow-400' : 'text-white'}`}>{it.name}</div>
+                                <div className="text-[10px] text-neutral-500 uppercase font-black">{it.rarity} | Suitable: {it.target}</div>
+                                </div>
+                                <div className="flex gap-1 font-black">
+                                {[0,1,2,3].map(pIdx => (
+                                    <button key={pIdx} onClick={() => onEquip(pIdx, it, idx)} className="w-9 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black transition-all shadow-lg">P{pIdx+1}</button>
+                                ))}
+                                </div>
+                            </div>
+                        ))
+                        }
+                    </div>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const SkillMenuView = ({ player, setPlayer, setView, equipSkill }) => (
+            <div className="max-w-4xl mx-auto pt-10 space-y-8 font-bold px-4 pb-20 font-black font-black font-black font-black font-black">
+                <button onClick={() => setView('LOBBY')} className="text-neutral-500 hover:text-white flex items-center gap-2 uppercase tracking-widest font-black font-black">&larr; Return to Base</button>
+                <h2 className="text-4xl italic text-blue-500 border-l-8 border-blue-500 pl-4 uppercase font-black tracking-tighter font-black font-black">Ability Arsenal</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-black">
+                    <div className="bg-neutral-900 p-6 rounded-[2rem] border-2 border-neutral-800 space-y-4 h-fit shadow-xl font-black font-black">
+                    <h3 className="text-xs uppercase tracking-widest text-neutral-500 italic font-black">Active Shortcuts</h3>
+                    {player.equippedSkills.map((sid, i) => (
+                        <div key={i} className="flex items-center gap-4 p-4 bg-black/40 rounded-2xl border border-blue-900/30 font-black">
+                            <span className="text-xs text-neutral-600 font-mono font-black">#{i+1}</span>
+                            <div className="text-blue-400 font-black"><Icon name={ALL_SKILLS[sid].icon} size={18} /></div>
+                            <div className="text-sm truncate text-white font-black font-black">{ALL_SKILLS[sid].name}</div>
+                        </div>
+                    ))}
+                    </div>
+                    <div className="md:col-span-2 space-y-4 max-h-[70vh] overflow-y-auto pr-2 scrollbar-hide font-black">
+                    {Object.entries(ALL_SKILLS).map(([id, s]) => {
+                        const sid = Number(id);
+                        const isEquipped = player.equippedSkills.includes(sid);
+                        const level = player.skillLevels[sid] || 0;
+                        return (
+                        <div key={id} className={`p-6 rounded-[2rem] border-2 transition-all shadow-lg font-black font-black font-black ${isEquipped ? 'bg-blue-900/10 border-blue-500 font-black' : 'bg-neutral-900 border-neutral-800 font-black font-black'}`}>
+                            <div className="flex justify-between items-center font-black">
+                                <div className="flex items-center gap-5">
+                                <div className="p-4 bg-neutral-800 rounded-2xl text-blue-400 font-black font-black"><Icon name={s.icon} size={28} /></div>
+                                <div className="font-black"><div className="text-xl font-black text-white font-black font-black font-black">{s.name} <span className="text-sm text-blue-500 ml-2 font-black">Lv.{level}</span></div><div className="text-xs text-neutral-500 mt-1 font-black font-black">{s.desc}</div></div>
+                                </div>
+                                <div className="flex flex-col gap-2 font-black">
+                                <button onClick={() => setPlayer(p => ({...p, skillPoints: p.skillPoints - 1, skillLevels: {...p.skillLevels, [sid]: level + 1}}))} disabled={player.skillPoints <= 0} className="px-4 py-2 bg-blue-600 rounded-xl text-xs hover:bg-blue-500 disabled:opacity-30 text-white font-black font-black">UPGRADE</button>
+                                {level > 0 && (
+                                    <div className="flex gap-1 font-black">
+                                    {[0,1,2,3].map(slot => (
+                                        <button key={slot} onClick={() => equipSkill(sid, slot)} className={`w-8 h-8 rounded-lg text-[10px] border transition-all font-black font-black ${player.equippedSkills[slot] === sid ? 'bg-white text-black border-white shadow-md' : 'bg-neutral-800 border-neutral-700 text-neutral-400'}`}>{slot+1}</button>
+                                    ))}
+                                    </div>
+                                )}
+                                </div>
+                            </div>
+                        </div>
+                        )
+                    })}
+                    </div>
+                </div>
+            </div>
+        );
+
+        const ResultView = ({ battleResult, claimRewards }) => (
+            <div className="flex flex-col items-center justify-center min-h-screen p-4 w-full max-w-2xl mx-auto space-y-8 pt-20 text-center font-black font-black font-black font-black font-black">
+                <div className={`p-12 rounded-[5rem] border-8 shadow-2xl font-black font-black font-black ${battleResult.win ? 'bg-blue-900/30 border-blue-500 shadow-blue-500/40' : 'bg-red-900/30 border-red-500 shadow-red-500/40'}`}>
+                <div className="flex justify-center mb-8 font-black font-black font-black font-black font-black">{battleResult.win ? <Icon name="Trophy" size={140} className="text-yellow-400 animate-bounce" /> : <Icon name="Skull" size={140} className="text-red-500" />}</div>
+                <h1 className={`text-7xl font-black italic uppercase mb-10 ${battleResult.win ? 'text-blue-400' : 'text-red-500'} strong-shadow font-black font-black`}>{battleResult.win ? 'MISSION CLEAR' : 'EXPEDITION FAILED'}</h1>
+                {battleResult.win && battleResult.loot && (
+                    <div className="bg-black/60 p-10 rounded-[3rem] border-2 border-neutral-800 shadow-inner mb-12 font-black font-black font-black">
+                    <h3 className="text-sm font-black text-yellow-500 uppercase tracking-[0.6em] mb-10 font-black font-black">Final Legendary Loot</h3>
+                    <div className="space-y-6 font-black font-black font-black font-black">
+                        {battleResult.loot.map((it, i) => (
+                            <div key={i} className="flex items-center justify-center gap-8 bg-neutral-900 p-6 rounded-[2.5rem] border-2 border-yellow-500 shadow-xl font-black">
+                            <div className="p-4 bg-yellow-600 rounded-2xl text-black font-black"><Icon name="Star" size={36}/></div>
+                            <div className="text-left font-black">
+                                <div className="text-yellow-400 text-3xl font-black font-black font-black">{it.name}</div>
+                                <div className="text-[14px] text-neutral-400 uppercase font-black font-black">{it.rarity} {it.type} gear</div>
+                            </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-12 pt-10 border-t border-neutral-800 flex justify-between items-center text-3xl font-black font-black">
+                        <span className="text-neutral-500 uppercase italic font-black font-black">MISSION TIME</span>
+                        <span className="text-white font-black font-black font-black font-black">{battleResult.stats.duration}s</span>
+                    </div>
+                    </div>
+                )}
+                <button onClick={claimRewards} className="interactive w-full py-12 bg-white text-black font-black rounded-[3.5rem] text-4xl hover:bg-neutral-200 transition-all active:scale-95 uppercase tracking-tighter italic shadow-white/10 font-black font-black font-black font-black">Finalize Quest</button>
+                </div>
+            </div>
+        );
+
+        // --- 메인 App 컴포넌트 ---
+
+        function App() {
+            const [view, setView] = useState('LOBBY');
+            const [difficulty, setDifficulty] = useState('NORMAL');
+            const [selectedTarget, setSelectedTarget] = useState(0);
+            const [isShaking, setIsShaking] = useState(false);
+            const [screenFlash, setScreenFlash] = useState(false);
+            const [flashes, setFlashes] = useState({});
+            const [showLoot, setShowLoot] = useState(false);
+            const [randomUpgrades, setRandomUpgrades] = useState([]);
+            const [lootedItems, setLootedItems] = useState([]);
+            const [lootedGold, setLootedGold] = useState(0);
+
+            const [party, setParty] = useState([
+                { id: 0, name: 'TANK-KIM', role: 'Tank', emoji: '🛡️', relationship: 50, equipment: { weapon: null, armor: null }, maxHp: 1200 },
+                { id: 1, name: 'DPS-LEE', role: 'DPS', emoji: '🗡️', relationship: 50, equipment: { weapon: null, armor: null }, maxHp: 600 },
+                { id: 2, name: 'DPS-PARK', role: 'DPS', emoji: '🪄', relationship: 50, equipment: { weapon: null, armor: null }, maxHp: 600 },
+            ]);
+
+            const [player, setPlayer] = useState({
+                level: 1, exp: 0, nextLevelExp: 100, gold: 500, skillPoints: 10,
+                hp: 600, maxHp: 600, skillLevels: { 1: 1, 2: 1, 3: 1, 4: 1, 5: 0, 6: 0, 7: 0, 8: 0 },
+                equippedSkills: [1, 2, 3, 4], equipment: { weapon: null, armor: null },
+                buffs: { healMult: 1, manaRegenMult: 1, cdReduction: 0, shieldMult: 1, overhealToShield: false }
+            });
+
+            const [inventory, setInventory] = useState([]);
+            const [raidData, setRaidData] = useState(null);
+            const [combatEffects, setCombatEffects] = useState([]);
+            const [projectiles, setProjectiles] = useState([]);
+            const [logs, setLogs] = useState([]);
+            const [battleResult, setBattleResult] = useState(null);
+
+            const gameLoopRef = useRef(null);
+            const statsRef = useRef({ totalHeal: 0, totalDamageTaken: 0, manaSpent: 0, startTime: 0 });
+
+            const addLog = useCallback((msg, type = "normal") => {
+                setLogs(prev => [{ msg, type, id: Math.random() }, ...prev].slice(0, 15));
+            }, []);
+
+            const triggerEffect = useCallback((targetId, value, type) => {
+                const id = `eff-${Date.now()}-${Math.random()}`;
+                setCombatEffects(prev => [...prev, { id, targetId, value, type }]);
+                setTimeout(() => setCombatEffects(prev => prev.filter(e => e.id !== id)), 650); 
+            }, []);
+
+            const triggerFlash = useCallback((targetKey, type) => {
+                setFlashes(prev => ({ ...prev, [targetKey]: type }));
+                setTimeout(() => setFlashes(prev => ({ ...prev, [targetKey]: null })), 500);
+            }, []);
+
+            const triggerProjectile = useCallback((from, to, effectType) => {
+                const id = `proj-${Date.now()}-${Math.random()}`;
+                const start = UNIT_COORD[from]; const end = UNIT_COORD[to];
+                const dx = end.x - start.x; const dy = end.y - start.y;
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                setProjectiles(prev => [...prev, { id, start, end, angle, effectType }]);
+                setTimeout(() => setProjectiles(prev => prev.filter(p => p.id !== id)), 650);
+            }, []);
+
+            const triggerShake = useCallback(() => {
+                setIsShaking(true); setScreenFlash(true);
+                setTimeout(() => { setIsShaking(false); setScreenFlash(false); }, 400);
+            }, []);
+
+            const endRaid = useCallback((win, finalLoot = []) => {
+                clearInterval(gameLoopRef.current);
+                const duration = ((Date.now() - statsRef.current.startTime) / 1000).toFixed(1);
+                setBattleResult({ win, stats: { ...statsRef.current, duration }, loot: finalLoot });
+                setView('RESULT'); setRaidData(null);
+            }, []);
+
+            const handleMonsterDefeated = (currentStage) => {
+                clearInterval(gameLoopRef.current);
+                const gold = Math.floor(Math.random() * 100) + (currentStage * 250);
+                const upgrades = [...UPGRADE_CARDS].sort(() => 0.5 - Math.random()).slice(0, 3);
+                const items = [ITEM_POOLS[Math.floor(Math.random() * 6)]];
+                
+                setLootedGold(gold);
+                setLootedItems(items);
+                setRandomUpgrades(upgrades);
+                setShowLoot(true);
+            };
+
+            const applyUpgradeAndLoot = (card) => {
+                setPlayer(p => {
+                    const b = { ...p.buffs };
+                    if (card.id === 'u1') b.healMult += 0.25;
+                    if (card.id === 'u2') b.manaRegenMult += 0.35;
+                    if (card.id === 'u3') b.shieldMult += 0.3;
+                    if (card.id === 'u4') b.cdReduction += 1.8;
+                    if (card.id === 'u5') b.overhealToShield = true;
+                    return { ...p, buffs: b, gold: p.gold + lootedGold };
+                });
+                setInventory(prev => [...prev, ...lootedItems]);
+                setShowLoot(false);
+
+                setRaidData(prev => {
+                    const nextStage = prev.stage + 1;
+                    const baseHp = { EASY: 15000, NORMAL: 30000, HARD: 80000 }[difficulty];
+                    addLog(`Next: ${ENEMIES[nextStage-1].name}`, "success");
+                    return {
+                        ...prev, stage: nextStage,
+                        bossHp: baseHp * ENEMIES[nextStage-1].hpFactor,
+                        bossMaxHp: baseHp * ENEMIES[nextStage-1].hpFactor,
+                        bossAttackProgress: 0, bossSpecialProgress: 0
+                    };
+                });
+            };
+
+            const equipItem = (pIdx, item, invIdx) => {
+                if (pIdx === 3) {
+                    setPlayer(prev => {
+                        const current = prev.equipment[item.type];
+                        if (current) setInventory(old => [...old, current]);
+                        return {...prev, equipment: {...prev.equipment, [item.type]: item}};
+                    });
+                } else {
+                    setParty(prev => {
+                        const next = [...prev];
+                        const current = next[pIdx].equipment[item.type];
+                        if (current) setInventory(old => [...old, current]);
+                        next[pIdx].equipment[item.type] = item;
+                        return next;
+                    });
+                }
+                setInventory(prev => prev.filter((_, i) => i !== invIdx));
+            };
+
+            const unequipItem = (pId, type) => {
+                if (pId === 3) {
+                    setPlayer(prev => {
+                        const removed = prev.equipment[type];
+                        if (!removed) return prev;
+                        setInventory(old => [...old, removed]);
+                        return { ...prev, equipment: { ...prev.equipment, [type]: null } };
+                    });
+                } else {
+                    setParty(prev => prev.map(m => {
+                        if (m.id === pId) {
+                            const removed = m.equipment[type];
+                            if (!removed) return m;
+                            setInventory(old => [...old, removed]);
+                            return { ...m, equipment: { ...m.equipment, [type]: null } };
+                        }
+                        return m;
+                    }));
+                }
+            };
+
+            const equipSkill = useCallback((sid, slot) => {
+                setPlayer(prev => {
+                    const next = [...prev.equippedSkills];
+                    if (next.includes(sid)) {
+                        const oldIdx = next.indexOf(sid);
+                        const temp = next[slot]; next[slot] = sid; next[oldIdx] = temp;
+                    } else { next[slot] = sid; }
+                    return { ...prev, equippedSkills: next };
+                });
+            }, []);
+
+            const startRaidSession = (diff) => {
+                const baseHp = { EASY: 15000, NORMAL: 30000, HARD: 80000 }[diff];
+                setDifficulty(diff);
+                statsRef.current = { totalHeal: 0, totalDamageTaken: 0, manaSpent: 0, startTime: Date.now() };
+                setRaidData({
+                    stage: 1, maxStages: 3, 
+                    bossHp: baseHp * ENEMIES[0].hpFactor, bossMaxHp: baseHp * ENEMIES[0].hpFactor, 
+                    mana: 200, maxMana: 200,
+                    cooldowns: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 },
+                    party: party.map(m => ({ ...m, curHp: m.maxHp, shield: 0, hot: 0, attackProgress: 0 })),
+                    playerCurHp: 600, playerMaxHp: 600, playerShield: 0, bossAttackProgress: 0, bossSpecialProgress: 0
+                });
+                setView('RAID');
+                addLog(`Dungeon entry. Targeting: ${ENEMIES[0].name}`, "success");
+            };
+
+            const castSpell = useCallback((skillId) => {
+                setRaidData(prev => {
+                    if (!prev || showLoot) return prev;
+                    const skill = ALL_SKILLS[skillId];
+                    const level = player.skillLevels[skillId] || 1;
+                    const weaponBonus = (player.equipment.weapon?.stat === 'heal' ? player.equipment.weapon.value : 1.0);
+                    const bonus = weaponBonus * player.buffs.healMult;
+                    
+                    if (prev.mana < skill.mana || prev.cooldowns[skillId] > 0) return prev;
+                    
+                    const next = { ...prev };
+                    next.mana -= skill.mana; next.cooldowns[skillId] = skill.cd * 10;
+                    const hAmt = (skillId === 1 ? 220 : skillId === 5 ? 550 : 150) * (1 + (level-1) * 0.2) * bonus;
+                    
+                    addLog(`${skill.name} 발동!`, "success");
+
+                    const resolveHeal = (curHp, maxHp, amt, shieldState) => {
+                        if (curHp <= 0) return { h: 0, s: shieldState }; 
+                        let newHp = Math.min(maxHp, curHp + amt);
+                        let newShield = shieldState;
+                        if (player.buffs.overhealToShield && (curHp + amt) > maxHp) {
+                            const over = (curHp + amt) - maxHp;
+                            newShield = Math.min(maxHp * 0.6, newShield + (over * 0.25));
+                        }
+                        return { h: newHp, s: newShield };
+                    };
+
+                    if ([1, 2, 5].includes(skillId)) {
+                        const targetKey = selectedTarget === 3 ? 'p-player' : `p-${selectedTarget}`;
+                        if (selectedTarget !== 3 && next.party[selectedTarget].curHp <= 0) { addLog("사망한 아군은 치유할 수 없습니다.", "error"); return prev; }
+                        triggerFlash(targetKey, 'heal');
+                        if (selectedTarget === 3) {
+                            const res = resolveHeal(next.playerCurHp, next.playerMaxHp, hAmt, next.playerShield);
+                            next.playerCurHp = res.h; next.playerShield = res.s;
+                        } else {
+                            if (skillId === 2) next.party[selectedTarget].hot = 12;
+                            else {
+                                const res = resolveHeal(next.party[selectedTarget].curHp, next.party[selectedTarget].maxHp, hAmt, next.party[selectedTarget].shield);
+                                next.party[selectedTarget].curHp = res.h; next.party[selectedTarget].shield = res.s;
+                            }
+                        }
+                        triggerEffect(targetKey, skillId === 2 ? "REGEN" : `+${Math.ceil(hAmt)}`, 'heal');
+                    } else if (skillId === 3) {
+                        const targetKey = selectedTarget === 3 ? 'p-player' : `p-${selectedTarget}`;
+                        if (selectedTarget !== 3 && next.party[selectedTarget].curHp <= 0) return prev;
+                        triggerFlash(targetKey, 'shield');
+                        const sVal = 400 * player.buffs.shieldMult;
+                        if (selectedTarget === 3) next.playerShield = sVal; else next.party[selectedTarget].shield = sVal;
+                        triggerEffect(targetKey, "SHIELD", "shield");
+                    } else if (skillId === 4 || skillId === 6) {
+                        next.party.forEach((m, idx) => { 
+                            if (m.curHp > 0) {
+                                const res = resolveHeal(m.curHp, m.maxHp, hAmt, m.shield);
+                                m.curHp = res.h; m.shield = res.s;
+                                triggerFlash(`p-${idx}`, 'heal'); triggerEffect(`p-${idx}`, `+${Math.ceil(hAmt)}`, 'heal'); 
+                            }
+                        });
+                        const pRes = resolveHeal(next.playerCurHp, next.playerMaxHp, hAmt, next.playerShield);
+                        next.playerCurHp = pRes.h; next.playerShield = pRes.s;
+                        triggerFlash('p-player', 'heal'); triggerEffect('p-player', `+${Math.ceil(hAmt)}`, 'heal');
+                    } else if (skillId === 8) {
+                        const sVal = 550 * player.buffs.shieldMult;
+                        next.party.forEach(m => { if (m.curHp > 0) { m.shield = sVal; triggerFlash(`p-${m.id}`, 'shield'); } });
+                        next.playerShield = sVal;
+                    }
+                    return next;
+                });
+            }, [player, selectedTarget, addLog, triggerEffect, triggerFlash, showLoot]);
+
+            const claimRewards = () => {
+                setPlayer(p => {
+                    let newExp = p.exp + 100;
+                    let newLevel = p.level;
+                    let newNextExp = p.nextLevelExp;
+                    if (newExp >= newNextExp) {
+                        newLevel += 1; newExp = 0; newNextExp = Math.floor(newNextExp * 1.7);
+                    }
+                    return { ...p, level: newLevel, exp: newExp, nextLevelExp: newNextExp, gold: p.gold + 500, skillPoints: p.skillPoints + 5 };
+                });
+                if (battleResult && battleResult.win && battleResult.loot) setInventory(old => [...old, ...battleResult.loot]);
+                setView('LOBBY'); setLogs([]);
+            };
+
+            useEffect(() => {
+                if (view === 'RAID' && raidData && !showLoot) {
+                    gameLoopRef.current = setInterval(() => {
+                        setRaidData(prev => {
+                            if (!prev) return null;
+                            const next = { ...prev };
+                            const enemy = ENEMIES[next.stage - 1];
+                            Object.keys(next.cooldowns).forEach(k => { if (next.cooldowns[k] > 0) next.cooldowns[k] -= (1 + player.buffs.cdReduction / 10); });
+                            next.mana = Math.min(next.maxMana, next.mana + (1.2 * player.buffs.manaRegenMult));
+                            next.party.forEach((m, i) => {
+                                if (m.curHp <= 0) return;
+                                if (m.hot > 0 && Math.random() < 0.1) {
+                                    const tickH = 35 * player.buffs.healMult; m.curHp = Math.min(m.maxHp, m.curHp + tickH);
+                                    triggerEffect(`p-${i}`, `+${Math.ceil(tickH)}`, 'heal'); m.hot -= 1;
+                                }
+                                const atkBonus = m.equipment.weapon?.stat === 'attack' ? m.equipment.weapon.value : 0;
+                                m.attackProgress += (m.role === 'Tank' ? 5 : 10); 
+                                if (m.attackProgress >= 100) {
+                                    const dmg = (m.role === 'Tank' ? 200 : 750) + atkBonus;
+                                    next.bossHp = Math.max(0, next.bossHp - dmg);
+                                    triggerEffect('boss', `-${dmg}`, 'damage');
+                                    triggerProjectile(`p-${i}`, 'boss', 'dps');
+                                    m.attackProgress = 0;
+                                }
+                            });
+                            const speedMult = difficulty === 'HARD' ? 1.3 : 0.7;
+                            next.bossAttackProgress += 6 * speedMult;
+                            next.bossSpecialProgress += enemy.specialSpeed * speedMult;
+                            if (next.bossAttackProgress >= 100) {
+                                const targets = [...next.party.map((_, idx) => idx), 'player'];
+                                const valid = targets.filter(t => t === 'player' || next.party[t].curHp > 0);
+                                if (valid.length === 0) return next;
+                                const target = valid[Math.floor(Math.random() * valid.length)];
+                                let rawDmg = Math.ceil(130 * (difficulty === 'HARD' ? 1.5 : 1.0) * (next.stage / 1.5));
+                                if (target === 'player') {
+                                    let actDmg = Math.max(0, rawDmg - next.playerShield); next.playerShield = Math.max(0, next.playerShield - rawDmg);
+                                    next.playerCurHp = Math.max(0, next.playerCurHp - actDmg);
+                                    triggerEffect('p-player', actDmg > 0 ? `-${actDmg}` : 'ABSORB', actDmg > 0 ? 'damage' : 'shield');
+                                    triggerProjectile('boss', 'p-player', 'boss'); triggerShake();
+                                } else {
+                                    let actDmg = Math.max(0, rawDmg - next.party[target].shield); next.party[target].shield = Math.max(0, next.party[target].shield - rawDmg);
+                                    next.party[target].curHp = Math.max(0, next.party[target].curHp - actDmg);
+                                    triggerEffect(`p-${target}`, actDmg > 0 ? `-${actDmg}` : 'ABSORB', actDmg > 0 ? 'damage' : 'shield');
+                                    triggerProjectile('boss', `p-${target}`, 'boss');
+                                }
+                                next.bossAttackProgress = 0;
+                            }
+                            if (next.bossSpecialProgress >= 100) {
+                                addLog(`${enemy.name}의 광역 공격!`, "error");
+                                const aoe = 90 * next.stage;
+                                next.party.forEach((m, idx) => { if (m.curHp > 0) { let actDmg = Math.max(0, aoe - m.shield); m.shield = Math.max(0, m.shield - aoe); m.curHp = Math.max(0, m.curHp - actDmg); triggerEffect(`p-${idx}`, actDmg > 0 ? `-${actDmg}` : 'ABSORB', 'damage'); } });
+                                let pActDmg = Math.max(0, aoe - next.playerShield); next.playerShield = Math.max(0, next.playerShield - aoe);
+                                next.playerCurHp = Math.max(0, next.playerCurHp - pActDmg);
+                                triggerEffect('p-player', pActDmg > 0 ? `-${pActDmg}` : 'ABSORB', 'damage'); triggerShake();
+                                next.bossSpecialProgress = 0;
+                            }
+                            if (next.bossHp <= 0) {
+                                if (next.stage < next.maxStages) { handleMonsterDefeated(next.stage); return next; }
+                                else { const finalLoot = [ITEM_POOLS[Math.floor(Math.random() * 4) + 6]]; endRaid(true, finalLoot); return prev; }
+                            }
+                            if (next.playerCurHp <= 0 || next.party.every(p => p.curHp <= 0)) { endRaid(false); return prev; }
+                            return next;
+                        });
+                    }, 100);
+                }
+                return () => clearInterval(gameLoopRef.current);
+            }, [view, difficulty, endRaid, triggerEffect, triggerProjectile, triggerShake, addLog, player.buffs, showLoot]);
+
+            return (
+                <div className={`min-h-screen bg-[#050505] text-neutral-100 overflow-y-auto select-none font-sans font-black ${isShaking ? 'shake' : ''}`}>
+                    {screenFlash && <div className="fixed inset-0 bg-red-600/20 z-[300] pointer-events-none animate-pulse" />}
+                    {showLoot && <LootOverlay upgrades={randomUpgrades} items={lootedItems} gold={lootedGold} onSelectUpgrade={applyUpgradeAndLoot} />}
+                    {view === 'LOBBY' && <LobbyView player={player} setView={setView} setDifficulty={setDifficulty} difficulty={difficulty} startRaid={startRaidSession} />}
+                    {view === 'RAID' && raidData && <RaidView raidData={raidData} combatEffects={combatEffects} projectiles={projectiles} player={player} selectedTarget={selectedTarget} setSelectedTarget={setSelectedTarget} castSpell={castSpell} logs={logs} flashes={flashes} />}
+                    {view === 'RESULT' && battleResult && <ResultView battleResult={battleResult} claimRewards={claimRewards} />}
+                    {view === 'SKILLS' && <SkillMenuView player={player} setPlayer={setPlayer} setView={setView} equipSkill={equipSkill} />}
+                    {view === 'PARTY' && <PartyGearView party={party} inventory={inventory} setView={setView} onEquip={equipItem} onUnequip={unequipItem} />}
+                    <div className="mt-20 py-10 opacity-20 text-[10px] text-neutral-500 font-black uppercase tracking-[0.6em] text-center border-t border-neutral-900 italic font-black font-black font-black font-black font-black">Simulation Kernel v16.1 // Protocol: GITHUB_PAGES_DEPLOY_STABLE</div>
+                </div>
             );
-        };
+        }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
